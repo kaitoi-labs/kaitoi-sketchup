@@ -14,7 +14,7 @@
 
   var handlers = {};
   var state = { busy: false, attached: null, pendingCost: null, allowCost: false,
-                lastSent: null, costButtons: null };
+                lastSent: null, costButtons: null, progress: null };
 
   function call(channel, payload) {
     if (!window.sketchup || typeof window.sketchup[channel] !== 'function') {
@@ -61,6 +61,60 @@
     t.appendChild(p);
     t.scrollTop = t.scrollHeight;
     return p;
+  }
+
+  // A live block in the transcript: node, percent, newest event, elapsed,
+  // and the MCP tool currently running.
+  function progressBox() {
+    if (state.progress && state.progress.box) return state.progress;
+    var box = document.createElement('div');
+    box.className = 'progress';
+    var head = document.createElement('div');
+    head.className = 'head';
+    var title = document.createElement('span');
+    title.textContent = 'working…';
+    var elapsed = document.createElement('span');
+    elapsed.className = 'elapsed';
+    head.appendChild(title); head.appendChild(elapsed);
+    var bar = document.createElement('div');
+    bar.className = 'bar';
+    var fill = document.createElement('span');
+    bar.appendChild(fill);
+    var line = document.createElement('div');
+    line.className = 'line';
+    var tool = document.createElement('div');
+    tool.className = 'tool';
+    box.appendChild(head); box.appendChild(bar); box.appendChild(line); box.appendChild(tool);
+    $('transcript').appendChild(box);
+    $('transcript').scrollTop = $('transcript').scrollHeight;
+    state.progress = { box: box, title: title, elapsed: elapsed, fill: fill, line: line, tool: tool };
+    return state.progress;
+  }
+
+  function updateProgress(d) {
+    var p = progressBox();
+    if (d.node) p.title.textContent = text(d.node);
+    else if (d.status) p.title.textContent = text(d.status);
+    if (d.percent !== undefined && d.percent !== null) {
+      p.fill.style.width = Math.max(0, Math.min(100, d.percent)) + '%';
+    }
+    if (d.elapsed !== undefined && d.elapsed !== null) {
+      p.elapsed.textContent = d.elapsed + 's' +
+        (d.percent ? ' · ' + d.percent + '%' : '') +
+        (d.status ? ' · ' + text(d.status) : '');
+    }
+    if (d.message) p.line.textContent = text(d.message);
+  }
+
+  function setToolLine(tool, phase, detail) {
+    var p = progressBox();
+    var suffix = detail ? ' — ' + text(detail) : '';
+    p.tool.textContent = (phase === 'done' ? '✓ ' : phase === 'error' ? '✗ ' : '▸ ') +
+      text(tool) + suffix;
+  }
+
+  function endProgress() {
+    state.progress = null;   // leave the finished block in the log
   }
 
   function setStatus(msg, isError) {
@@ -241,6 +295,7 @@
   on('agent_send', function (res) {
     if (!res.ok) {
       busy(false);
+      endProgress();
       releaseCostButtons();
       setStatus(errText(res.error), true);
       return say('err', 'mcp', errText(res.error));
@@ -257,11 +312,13 @@
 
     if (d.generate) {
       say('tool', 'run', d.generate.query + (d.generate.prompt ? ' — "' + d.generate.prompt + '"' : ''));
-      setStatus('generating…');
+      updateProgress({ status: 'starting', percent: 0, elapsed: 0,
+                       message: d.generate.prompt || d.generate.query });
       return;                       // agent_status / agent_output follow
     }
 
     busy(false);
+    endProgress();
     setStatus('');
   });
 
@@ -294,6 +351,9 @@
     box.className = 'cost';
     var p = document.createElement('div');
     p.textContent = 'This costs credits: ' + summarizeCost(d.preview);
+    var detail = document.createElement('div');
+    detail.className = 'detail';
+    try { detail.textContent = JSON.stringify(d.preview); } catch (e) { detail.textContent = ''; }
     var btn = document.createElement('button');
     btn.textContent = 'Confirm and run';
     btn.addEventListener('click', function () {
@@ -312,20 +372,34 @@
       send(true, d.idempotencyKey);
     });
     state.costButtons = [btn, once];
+    var row = document.createElement('div');
+    row.className = 'buttons';
+    row.appendChild(btn);
+    row.appendChild(once);
     box.appendChild(p);
-    box.appendChild(btn);
-    box.appendChild(once);
+    if (detail.textContent) box.appendChild(detail);
+    box.appendChild(row);
     $('transcript').appendChild(box);
     $('transcript').scrollTop = $('transcript').scrollHeight;
   }
 
+  on('agent_tool', function (res) {
+    if (!res.ok) return;
+    var d = res.data;
+    setToolLine(d.tool, d.phase, d.detail);
+    if (d.phase === 'start') setStatus('running ' + text(d.tool) + '…');
+  });
+
   on('agent_status', function (res) {
     if (!res.ok) return;
-    setStatus('status: ' + text(res.data.status));
+    updateProgress(res.data);
+    setStatus('status: ' + text(res.data.status) +
+      (res.data.percent ? ' · ' + res.data.percent + '%' : ''));
   });
 
   on('agent_output', function (res) {
     busy(false);
+    endProgress();
     if (!res.ok) { setStatus(errText(res.error), true); return say('err', 'run', errText(res.error)); }
     var d = res.data;
     if (d.kind === 'media' && d.entry) {
@@ -350,6 +424,7 @@
     state.allowCost = false;
     state.lastSent = null;
     state.costButtons = null;
+    state.progress = null;
     $('attached').textContent = '';
     call('agent_reset');
   });

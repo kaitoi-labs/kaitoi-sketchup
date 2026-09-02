@@ -298,6 +298,19 @@ module Kaitoio
         mcp.call_tool('get_graph_run_status', { 'execution_id' => execution_id })
       end
 
+      # Progress / diagnostic events for a durable execution. This tool takes
+      # no cursor, so the whole tail comes back each time and new events are
+      # picked out here.
+      def events(execution_id, limit: 100)
+        res  = mcp.call_tool('get_graph_run_events', { 'execution_id' => execution_id, 'limit' => limit })
+        body = res['structured'] || {}
+        list = body['events'] || body['data'] || body['items'] || []
+        list.is_a?(Array) ? list : []
+      rescue Kaitoio::Error => e
+        Kaitoio.log("agent events unavailable: #{e.message}", 'WARN')
+        []
+      end
+
       # ---- results ---------------------------------------------------
 
       # Resolve an execution's media to signed URLs, download the first one.

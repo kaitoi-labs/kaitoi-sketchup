@@ -8,6 +8,18 @@ require_relative 'oauth'
 
 module Kaitoio
   module Mcp
+    # Panels subscribe here to show which MCP tool is running. Kept as a
+    # module hook so the client stays unaware of any UI.
+    class << self
+      attr_accessor :observer
+    end
+
+    def self.notify_tool(name, phase, detail = nil)
+      observer.call(name, phase, detail) if observer
+    rescue => e
+      Kaitoio.log("MCP observer error: #{e.message}", 'WARN')
+    end
+
     # Minimal MCP client speaking JSON-RPC 2.0 over Streamable HTTP.
     #
     # Only what the Agent panel needs: initialize, tools/list, tools/call.
@@ -76,7 +88,10 @@ module Kaitoio
       # Returns { 'text' => joined text, 'structured' => Hash|nil, 'raw' => result }
       def call_tool(name, arguments = {})
         ensure_initialized!
-        result = rpc('tools/call', { 'name' => name, 'arguments' => arguments })
+        Kaitoio::Mcp.notify_tool(name, 'start', tool_detail(name, arguments))
+        started = Time.now
+        result  = rpc('tools/call', { 'name' => name, 'arguments' => arguments })
+        Kaitoio::Mcp.notify_tool(name, 'done', format('%.1fs', Time.now - started))
 
         text = Array(result['content']).map { |c|
           c.is_a?(Hash) && c['type'] == 'text' ? c['text'].to_s : nil
@@ -91,10 +106,17 @@ module Kaitoio
         end
 
         if result['isError']
+          Kaitoio::Mcp.notify_tool(name, 'error', text[0, 120])
           raise Kaitoio::Error.new("MCP tool #{name} failed: #{text}", code: 'TOOL_ERROR')
         end
 
         { 'text' => text, 'structured' => structured, 'raw' => result }
+      end
+
+      # A short, non-secret summary of what the tool was asked to do.
+      def tool_detail(name, args)
+        return nil unless args.is_a?(Hash)
+        args['node_type'] || args['query'] || args['execution_id'] || args['url']
       end
 
       # ---- transport -------------------------------------------------

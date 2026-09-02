@@ -65,10 +65,14 @@ function run(htmlPath, jsPath, label, interactions) {
   console.log(`   loaded ok; boot called: ${calls.map(c => c.name).join(', ') || '(none)'}`);
 
   let pass = true;
+  const recv = (channel, payload) => {
+    if (!sandbox.window.kaitoi || !sandbox.window.kaitoi.receive) throw new Error('no window.kaitoi.receive');
+    sandbox.window.kaitoi.receive(channel, payload);
+  };
   (interactions || []).forEach(step => {
     const before = calls.length;
     let thrown = null;
-    try { step.run(els, sandbox); } catch (e) { thrown = e; }
+    try { step.run(els, sandbox, recv); } catch (e) { thrown = e; }
     const fired = calls.slice(before).map(c => c.name);
     if (thrown) { console.log(`   FAIL  ${step.name}: ${thrown.name}: ${thrown.message}`); pass = false; }
     else if (step.expect && !fired.includes(step.expect)) {
@@ -93,6 +97,35 @@ allPass &= run(H + '/agent.html', H + '/agent.js', 'agent.js', [
   }},
   { name: 'Capture view', expect: 'agent_capture', run: (els) => els.get('capture').fire('click') },
   { name: 'New session', expect: 'agent_reset', run: (els) => els.get('reset').fire('click') },
+
+  // Inbound handlers: these only run on messages from Ruby, so the button
+  // test above never reaches them.
+  { name: 'boot payload', run: (els, sb, recv) => recv('agent_boot', { ok: true, data: {
+      version: '0.1.0', mcpUrl: 'https://mcp.studio.kaitoi.io', authMode: 'token',
+      signedIn: true, attached: null, history: [] } }) },
+  { name: 'chat reply', run: (els, sb, recv) => recv('agent_send', { ok: true, data: {
+      kind: 'reply', reply: 'Hi there!', generate: null } }) },
+  { name: 'reply + generate', run: (els, sb, recv) => recv('agent_send', { ok: true, data: {
+      kind: 'reply', reply: 'On it.', generate: { query: 'image to image', prompt: 'watercolour' } } }) },
+  { name: 'tool start/done', run: (els, sb, recv) => {
+      recv('agent_tool', { ok: true, data: { tool: 'run_node_by_search', phase: 'start', detail: 'image to image' } });
+      recv('agent_tool', { ok: true, data: { tool: 'run_node_by_search', phase: 'done', detail: '2.4s' } });
+  }},
+  { name: 'progress updates', run: (els, sb, recv) => {
+      recv('agent_status', { ok: true, data: { status: 'running', percent: 40,
+        node: 'Qwen Image Edit', message: 'Status: IN_PROGRESS', elapsed: 12, events: 3 } });
+      recv('agent_status', { ok: true, data: { status: 'running', percent: 90,
+        node: 'Qwen Image Edit', message: 'COMPLETED', elapsed: 31, events: 1 } });
+  }},
+  { name: 'cost prompt', run: (els, sb, recv) => recv('agent_send', { ok: true, data: {
+      kind: 'cost', idempotencyKey: 'k1',
+      preview: { requiresConfirmation: true, nodeType: 'builtin/x',
+                 providers: [{ name: 'google', label: 'Gemini', cost: 0.01, costType: 'per_call' }] } } }) },
+  { name: 'media output', run: (els, sb, recv) => recv('agent_output', { ok: true, data: {
+      kind: 'media', entry: { path: '/tmp/x.png', contentType: 'image/png' }, dataUri: 'data:image/png;base64,AA' } }) },
+  { name: 'failed output', run: (els, sb, recv) => recv('agent_output', { ok: false, error: 'Run failed: boom' }) },
+  { name: 'error object not [object Object]', run: (els, sb, recv) => recv('agent_output', {
+      ok: false, error: { code: 'EXECUTION_ERROR', message: 'Retopology failed' } }) },
 ]);
 
 allPass &= run(H + '/index.html', H + '/app.js', 'app.js', [

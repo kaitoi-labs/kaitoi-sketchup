@@ -22,11 +22,21 @@ button.small { padding: 3px 9px; font-size: 12px; }
 .transcript {
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg);
-  height: 52vh; min-height: 260px; overflow-y: auto;
+  height: 52vh; min-height: 260px;
+  overflow-y: auto; overflow-x: hidden;   /* long JSON must never widen the pane */
   padding: 10px; font-size: 13px;
 }
 
-.msg { margin: 0 0 10px; white-space: pre-wrap; word-break: break-word; }
+/* Everything inside the log wraps; nothing establishes its own min-width. */
+.transcript > * { max-width: 100%; box-sizing: border-box; }
+
+.msg {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;      /* breaks unspaced tokens like fileIds/JSON */
+  word-break: break-word;
+  min-width: 0;
+}
 .msg .who { font-weight: 600; margin-right: 5px; }
 .msg.user  .who { color: var(--accent); }
 .msg.agent .who { color: var(--ok); }
@@ -54,7 +64,39 @@ button.small { padding: 3px 9px; font-size: 12px; }
 .cost {
   border: 1px solid var(--warn); border-radius: var(--radius);
   padding: 8px; margin: 0 0 10px; font-size: 12px;
+  overflow-wrap: anywhere; word-break: break-word;
 }
-.cost button { margin-top: 6px; }
+.cost .detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--muted);
+  max-height: 4.5em; overflow: auto; margin-top: 4px;
+}
+.cost .buttons { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+/* ---- live progress ---- */
+.progress {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 8px 10px; margin: 0 0 10px; font-size: 12px; background: var(--slot);
+}
+.progress .head {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-weight: 600; margin-bottom: 5px;
+}
+.progress .head .elapsed { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.progress .bar {
+  height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 5px 0 6px;
+}
+.progress .bar > span {
+  display: block; height: 100%; width: 0; background: var(--accent);
+  transition: width .3s ease;
+}
+.progress .line {
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.progress .tool {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .topbar-right { display: flex; align-items: center; gap: 8px; }

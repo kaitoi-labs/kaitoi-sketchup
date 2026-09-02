@@ -38,7 +38,19 @@ module Kaitoio
         )
         @dialog.set_file(File.join(HTML_DIR, 'agent.html'))
         attach_callbacks(@dialog)
-        @dialog.set_on_closed { stop_polling; stop_auth_pump; Kaitoio::Mcp::OAuth.stop_listener; @dialog = nil }
+        # Surface every MCP tool call in the panel, so the user can see what
+        # the agent is actually doing rather than only "generating…".
+        Kaitoio::Mcp.observer = proc do |name, phase, detail|
+          push('agent_tool', 'ok' => true,
+               'data' => { 'tool' => name, 'phase' => phase, 'detail' => detail })
+        end
+        @dialog.set_on_closed do
+          stop_polling
+          stop_auth_pump
+          Kaitoio::Mcp::OAuth.stop_listener
+          Kaitoio::Mcp.observer = nil
+          @dialog = nil
+        end
         @dialog.show
         @dialog
       end
@@ -204,12 +216,19 @@ module Kaitoio
       def handle_turn(res, prompt)
         case res['kind']
         when 'pending' then start_polling(res['executionId'], prompt)
-        when 'result'  then deliver(res['executionId'], prompt)
+        when 'result'  then deliver(res['executionId'], prompt, res)
         end
       end
 
-      def deliver(execution_id, prompt)
-        return push('agent_output', 'ok' => true, 'data' => { 'kind' => 'text', 'text' => '(no execution id)' }) unless execution_id
+      def deliver(execution_id, prompt, run = nil)
+        unless execution_id
+          # No execution id means the run never started -- surface why rather
+          # than the old placeholder, which left the panel stuck on
+          # "generating…" with nothing to act on.
+          detail = run && (run['text'] || run['status'])
+          return push('agent_output', 'ok' => false,
+                      'error' => "The run did not start. #{detail}".strip)
+        end
         out = Kaitoio::Agent::Session.collect_output(execution_id, prompt)
         out['dataUri'] = preview_uri(out['entry']) if out['entry']
         push('agent_output', 'ok' => true, 'data' => out)
@@ -217,8 +236,11 @@ module Kaitoio
 
       def start_polling(execution_id, prompt)
         stop_polling
-        @exec_id = execution_id
-        @prompt  = prompt
+        @exec_id     = execution_id
+        @prompt      = prompt
+        @run_started = Time.now
+        @seen_events = {}
+        @last_percent = 0
         interval = (Kaitoio::Settings.load['poll_interval_seconds'] || 2).to_i
         interval = 2 if interval <= 0
         @timer = UI.start_timer(interval, true) { tick }
@@ -237,7 +259,8 @@ module Kaitoio
         res    = Kaitoio::Agent::Session.poll(@exec_id)
         body   = res['structured'] || {}
         status = (body['status'] || '').to_s
-        push('agent_status', 'ok' => true, 'data' => { 'status' => status, 'text' => res['text'] })
+
+        push('agent_status', 'ok' => true, 'data' => progress_payload(status, body))
         return unless %w[succeeded failed canceled completed].include?(status)
 
         id = @exec_id
