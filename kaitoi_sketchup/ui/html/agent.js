@@ -121,7 +121,9 @@
       setConn(false, 'not signed in');
       $('connect').hidden = false;
       say('tool', 'mcp', 'The MCP API is separate from the REST API and needs its own ' +
-        'authorization. Click Connect to sign in to ' + d.mcpUrl + ' in your browser.');
+        'credential for ' + d.mcpUrl + '. Either mint a token in Kaitoi Studio → ' +
+        'Settings → MCP and paste it into Preferences → MCP token, or click Connect ' +
+        'to authorize in your browser.');
       return;
     }
     $('connect').hidden = true;
@@ -174,7 +176,11 @@
     $('signout').hidden = state.authMode !== 'oauth';
     var s = res.data.server || {};
     setConn(true, 'connected');
-    say('tool', 'mcp', 'ready — ' + (s.name || 'server') + ' ' + (s.version || ''));
+    say('tool', 'mcp', 'ready — ' + (s.name || 'server') + ' ' + (s.version || '') +
+      ' · ' + text(res.data.toolCount) + ' tools');
+    if (res.data.canRun === false) {
+      say('err', 'mcp', 'This server exposes no run_node_by_search tool; generation is unavailable.');
+    }
   });
 
   // ---- capture ----------------------------------------------------------

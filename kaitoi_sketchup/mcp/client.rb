@@ -22,9 +22,10 @@ module Kaitoio
       def initialize(url: nil, api_key: nil, timeout: nil)
         cfg      = Kaitoio::Settings.load
         @url     = (url || cfg['mcp_url']).to_s
-        # MCP is a separate API from REST. A REST key is rejected there
-        # (invalid_token), so there is deliberately no fallback to it:
-        # either a static MCP-scoped token is configured, or we use OAuth.
+        # MCP is a separate API from REST, and a REST key is rejected there
+        # (invalid_token), so there is deliberately no fallback to it. Either
+        # an MCP token minted in Studio > Settings > MCP is configured, or we
+        # fall back to the OAuth flow.
         @static_key = (api_key || cfg['mcp_token']).to_s
         @timeout = (timeout || cfg['request_timeout_seconds'] || 120).to_i
         @initialized = false
@@ -42,7 +43,8 @@ module Kaitoio
         return @static_key unless @static_key.empty?
         token = Kaitoio::Mcp::OAuth.access_token
         raise Kaitoio::AuthError.new(
-          'Not signed in to the Kaitoi MCP server. Use Connect in the Agent panel.',
+          'No MCP credential. Mint a token in Kaitoi Studio > Settings > MCP and set it ' \
+          'in Preferences (MCP token), or use Connect in the Agent panel to sign in.',
           code: 'NOT_SIGNED_IN'
         ) unless token
         token
@@ -195,13 +197,18 @@ module Kaitoio
         when 401
           # An expired OAuth session looks the same as a bad token; make the
           # remedy explicit rather than leaving "invalid_token".
-          hint = auth_mode == 'oauth' ? ' Use Connect in the Agent panel to sign in again.' : ''
+          hint = if auth_mode == 'oauth'
+                   ' Use Connect in the Agent panel to sign in again.'
+                 else
+                   ' Check the MCP token, or mint a fresh one in Kaitoi Studio > Settings > MCP.'
+                 end
           raise Kaitoio::AuthError.new("#{msg}#{hint}", status: 401, code: code)
         when 403
           # The common case: a REST key without mcp:read / mcp:write.
           raise Kaitoio::AuthError.new(
-            "#{msg} The MCP API needs mcp:read / mcp:write; a REST key does not " \
-            'carry them. Use Connect in the Agent panel to sign in.', status: 403, code: code
+            "#{msg} The MCP API needs mcp:read / mcp:write; a REST key does not carry " \
+            'them. Mint an MCP token in Kaitoi Studio > Settings > MCP, or use Connect.',
+            status: 403, code: code
           )
         when 404 then raise Kaitoio::NotFound.new(msg, status: 404, code: code)
         else raise Kaitoio::Error.new(msg, status: res.code.to_i, code: code)

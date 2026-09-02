@@ -28,15 +28,38 @@ module Kaitoio
       def reset!
         @mcp = nil
         @attached = nil
+        @tool_names = nil
+        @image_input_name = nil
       end
 
       def attached
         @attached
       end
 
+      # The server's tool set is the authority; the published README lists a
+      # slightly different set, so confirm what is actually offered.
+      RUN_TOOL = 'run_node_by_search'.freeze
+
+      def tool_names
+        @tool_names ||= mcp.tools.map { |t| t['name'] }
+      end
+
+      def ensure_run_tool!
+        return true if tool_names.include?(RUN_TOOL)
+        raise Kaitoio::Error.new(
+          "This MCP server does not expose #{RUN_TOOL}. Available run tools: " \
+          "#{tool_names.grep(/run/).join(', ')}"
+        )
+      end
+
       def status
         mcp.ensure_initialized!
-        { 'ok' => true, 'server' => mcp.server_info, 'url' => mcp.url }
+        names = tool_names
+        { 'ok'        => true,
+          'server'    => mcp.server_info,
+          'url'       => mcp.url,
+          'toolCount' => names.length,
+          'canRun'    => names.include?(RUN_TOOL) }
       end
 
       # ---- attaching the viewport ------------------------------------
@@ -71,13 +94,14 @@ module Kaitoio
       def ask(text, use_capture: true, confirm_cost: false, idempotency_key: nil)
         raise Kaitoio::Error.new('Say something first') if text.to_s.strip.empty?
         mcp.ensure_initialized!
+        ensure_run_tool!
 
         key  = idempotency_key || SecureRandom.uuid
         args = { 'query' => text.to_s, 'wait_seconds' => 25, 'idempotency_key' => key }
         args['confirm_cost'] = true if confirm_cost
         args['inputs'] = { image_input_name => @attached } if use_capture && @attached && image_input_name
 
-        res = mcp.call_tool('run_node_by_search', args)
+        res = mcp.call_tool(RUN_TOOL, args)
         interpret(res, text, key, use_capture)
       end
 
@@ -100,7 +124,7 @@ module Kaitoio
             retry_args = { 'query' => text.to_s, 'wait_seconds' => 25,
                            'idempotency_key' => SecureRandom.uuid,
                            'inputs' => { name => @attached } }
-            return interpret(mcp.call_tool('run_node_by_search', retry_args), text, key, false)
+            return interpret(mcp.call_tool(RUN_TOOL, retry_args), text, key, false)
           end
         end
 

@@ -23,24 +23,26 @@ Licensed under the [Apache License, Version 2.0](../LICENSE).
 
 ## Install
 
-1. **Copy the `kaitoi_sketchup/` folder** into your SketchUp `Plugins`
-   directory:
+1. **Copy `kaitoi_sketchup.rb` and the `kaitoi_sketchup/` folder** into your
+   SketchUp `Plugins` directory:
    - macOS: `~/Library/Application Support/SketchUp <year>/SketchUp/Plugins/`
    - Windows: `%APPDATA%\SketchUp <year>\SketchUp\Plugins\`
 
-   Final layout:
+   Final layout — SketchUp loads `.rb` files sitting directly in `Plugins/`,
+   so the loader and its folder are siblings:
    ```
    Plugins/
+     kaitoi_sketchup.rb        <- loader, must be at the Plugins root
      kaitoi_sketchup/
-       kaitoi_sketchup.rb
-       kaitoi_sketchup/
-         api/...
-         extensions/...
-         model/...
-         graph/...
-         ui/...
-         version.rb
-         settings.rb
+       api/...
+       agent/...
+       mcp/...
+       extensions/...
+       model/...
+       graph/...
+       ui/...
+       version.rb
+       settings.rb
    ```
 
 2. **Restart SketchUp.** A new `Plugins > Kaitoio` submenu appears.
@@ -110,12 +112,17 @@ The panel has four tabs: **Render**, **Templates**, **Generations**,
 ```
 Plugins > Kaitoio
   Open Panel...
+  Kaitoi Agent...
   ─────
   Set API Key...
+  Set MCP Token...
+  ─────
+  Reload (dev)
 ```
 
-The Panel is the recommended way to work; the menu just opens it and offers a
-quick API-key entry.
+The Panel is the recommended way to work; the menu opens it, opens the Agent,
+and offers quick credential entry. **Reload (dev)** re-`load`s the Ruby files
+without restarting SketchUp.
 
 ---
 
@@ -148,11 +155,15 @@ kaitoi_sketchup.rb            # entry point, requires everything
    └─ ui/
       ├─ dialog.rb            # UI::HtmlDialog wrapper, action callbacks,
       │                       #   run pollers (UI.start_timer)
+      ├─ agent_dialog.rb     # the Kaitoi Agent panel
       └─ html/
          ├─ index.html
          ├─ style.css
-         └─ app.js            # vanilla JS, talks to Ruby via
-                              #   window.sketchup.* action callbacks
+         ├─ app.js            # vanilla JS, talks to Ruby via
+         │                    #   window.sketchup.* action callbacks
+         ├─ agent.html
+         ├─ agent.css
+         └─ agent.js
 ```
 
 The JS side never makes HTTP calls directly — it goes through Ruby's
@@ -164,6 +175,65 @@ flow:
 2. `PUT` the bytes to that signed URL (no auth header, just the signed
    headers)
 3. `POST /api/v1/files/uploads/{id}/complete` → durable `fileId`
+
+---
+
+## Kaitoi Agent (MCP)
+
+`Plugins > Kaitoio > Kaitoi Agent...` opens a second panel: a chat on the left,
+the viewport capture and the generated result on the right. Each message
+becomes a call to the [Kaitoi Studio MCP server](https://github.com/kaitoi-labs/kaitoi-mcp),
+which picks the node and runs it — the transcript shows the tool traffic, so
+what ran stays visible.
+
+> This is not an LLM agent. One message is one MCP tool call
+> (`run_node_by_search`); the server does the node selection.
+
+### Configuration
+
+| Item | Value |
+|---|---|
+| Transport | Streamable HTTP (JSON-RPC 2.0) |
+| Endpoint | `https://mcp.studio.kaitoi.io` |
+| Auth | Bearer token, or OAuth 2.1 + PKCE |
+| Scopes | `mcp:read`, `mcp:write` |
+| Token settings | `mcp_url`, `mcp_token` in `~/.kaitoi_sketchup/config.json` |
+| OAuth tokens | `~/.kaitoi_sketchup/mcp_auth.json` (mode `0600`) |
+
+**MCP is a separate API from the REST API above.** A REST key is rejected
+there with `invalid_token`; the two credentials are not interchangeable.
+
+### Connecting
+
+Either works — pick one:
+
+1. **Token (recommended).** Mint one in Kaitoi Studio under
+   **Settings → MCP**, then paste it into the panel's **Preferences → MCP
+   token**, or use `Plugins > Kaitoio > Set MCP Token...`. Tokens last 365
+   days by default and are revocable; mint a separate one per client.
+2. **OAuth.** Leave the token blank and press **Connect** in the Agent panel.
+   The plugin registers itself dynamically, opens your browser for approval,
+   and catches the redirect on `http://127.0.0.1:8785/callback`. Access
+   tokens refresh automatically; **Sign out** clears them.
+
+Neither credential is ever sent to the panel's JavaScript — both are redacted
+to a short hint before `boot` returns.
+
+### How a turn works
+
+1. **Capture** exports the viewport to PNG.
+2. MCP's `upload_file` imports a *public URL*, not a REST `fileId`, so the
+   capture goes: REST upload → signed download URL → `upload_file` → a Kaitoi
+   filename usable as a node input.
+3. The message is sent as `run_node_by_search`. If the server answers
+   `MISSING_REQUIRED_INPUTS`, the plugin reads the required input name from
+   that reply and retries with the capture bound to it, rather than guessing
+   a pin name.
+4. `COST_CONFIRMATION_REQUIRED` surfaces a confirmation button and replays
+   with the **same idempotency key**, so a retry cannot launch a second paid
+   run.
+5. Progress is polled with `UI.start_timer`; `get_displayable_outputs`
+   resolves the result, which is downloaded and recorded in **Generations**.
 
 ---
 
@@ -190,8 +260,12 @@ flow:
   `~/.kaitoi_sketchup/plugin.log` (HTTP, API ops, run status, errors).
 - Video results can't preview in-panel (no H.264 codec in the embedded
   browser); they download and open in the OS player instead.
-- The plugin targets SketchUp 2017+ (uses `UI::HtmlDialog`,
-  `Net::HTTP`, `Digest`, `JSON`, `URI` from the Ruby stdlib).
+- The plugin targets **SketchUp 2021+** (Ruby 2.7+). It uses only the Ruby
+  stdlib (`Net::HTTP`, `Digest`, `JSON`, `URI`, `Socket`) plus
+  `UI::HtmlDialog`. SketchUp 2026 ships Ruby 3.2.2.
+- The **Templates** tab is currently hidden in the panel. Its markup and Ruby
+  paths are retained; re-enable it by uncommenting the `#tab-templates`
+  section and its tab button in `ui/html/index.html`.
 
 ---
 

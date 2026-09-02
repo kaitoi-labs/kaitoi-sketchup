@@ -13,11 +13,13 @@ module Kaitoio
       'poll_interval_seconds'   => 2,
       'download_dir'            => '',
       'capture_max_edge'        => 1024,
-      # MCP (Kaitoi Agent) is a separate API from the REST one above:
-      # its own endpoint, its own credential, scopes mcp:read / mcp:write.
-      # A REST key is NOT accepted there. Leave mcp_token blank to sign in
-      # with OAuth (the supported path); set it only if you hold a static
-      # MCP-scoped token.
+      # MCP (Kaitoi Agent) is a separate API from the REST one above: its own
+      # endpoint, its own credential, scopes mcp:read / mcp:write. A REST key
+      # is NOT accepted there.
+      #
+      # Preferred: mint a token in Kaitoi Studio > Settings > MCP (Bearer,
+      # 365 days by default, revocable, scoped to the minting user) and put it
+      # in mcp_token. Leave it blank to sign in with OAuth instead.
       'mcp_url'                 => 'https://mcp.studio.kaitoi.io',
       'mcp_token'             => '',
       # Last panel selections, restored on reopen.
