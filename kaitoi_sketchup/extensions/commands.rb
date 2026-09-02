@@ -30,6 +30,33 @@ module Kaitoio
         false
       end
 
+      # MCP is a separate API from REST, with its own credential. Stored in
+      # the same config.json (mode 0600) under mcp_token.
+      def set_mcp_token
+        cfg     = Kaitoio::Settings.load
+        current = cfg['mcp_token'].to_s
+        masked  = current.empty? ? '' : "#{current[0, 6]}…#{current[-4, 4]}"
+
+        result = UI.inputbox(['MCP token', 'MCP endpoint'],
+                             [masked, cfg['mcp_url'].to_s],
+                             'Kaitoio — MCP token')
+        return false unless result
+
+        key, url = result
+        updates = {}
+        updates['mcp_token'] = key.to_s.strip unless key.to_s.strip.empty? || key == masked
+        updates['mcp_url']     = url.to_s.strip unless url.to_s.strip.empty?
+        Kaitoio::Settings.update(updates) unless updates.empty?
+
+        UI.messagebox("MCP settings saved.\n\n#{Kaitoio::Settings.path}\n\n" \
+                      'Leave the key blank to sign in with OAuth instead.')
+        true
+      rescue => e
+        Kaitoio.log_error('set_mcp_token failed', e)
+        UI.messagebox("Could not save MCP settings:\n#{e.message}")
+        false
+      end
+
       def test_connection
         unless Kaitoio::Settings.configured?
           UI.messagebox('Set your API key first (Plugins > Kaitoio > Set API Key...).')

@@ -11,6 +11,7 @@ module Kaitoio
         menu.add_item('Kaitoi Agent...') { Kaitoio::Dialogs::AgentDialog.show }
         menu.add_separator
         menu.add_item('Set API Key...') { Commands.set_api_key }
+        menu.add_item('Set MCP Token...') { Commands.set_mcp_token }
         menu.add_separator
         menu.add_item('Reload (dev)') do
           Kaitoio.reload!

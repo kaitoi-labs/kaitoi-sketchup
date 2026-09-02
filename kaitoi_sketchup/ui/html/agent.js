@@ -114,20 +114,64 @@
     $('version').textContent = 'v' + d.version;
     state.attached = d.attached || null;
     $('attached').textContent = state.attached ? '(attached)' : '';
-    if (!d.hasKey) {
-      setConn(false, 'no API key');
-      say('err', 'setup', 'No API key set. Add one in the main panel’s Preferences tab.');
+    state.authMode = d.authMode;
+    $('signout').hidden = !(d.authMode === 'oauth' && d.signedIn);
+
+    if (!d.signedIn) {
+      setConn(false, 'not signed in');
+      $('connect').hidden = false;
+      say('tool', 'mcp', 'The MCP API is separate from the REST API and needs its own ' +
+        'authorization. Click Connect to sign in to ' + d.mcpUrl + ' in your browser.');
       return;
     }
+    $('connect').hidden = true;
     say('tool', 'mcp', 'connecting to ' + d.mcpUrl + ' …');
+    call('agent_connect');
+  });
+
+  bind('connect', 'click', function () {
+    $('connect').disabled = true;
+    setStatus('opening browser for sign-in…');
+    say('tool', 'mcp', 'waiting for browser authorization…');
+    call('agent_signin');
+  });
+
+  bind('signout', 'click', function () {
+    call('agent_signout');
+  });
+  on('agent_signout', function () {
+    setConn(false, 'signed out');
+    say('tool', 'mcp', 'signed out');
+    call('agent_boot');
+  });
+
+  on('agent_signin', function (res) {
+    if (!res.ok) {
+      $('connect').disabled = false;
+      setStatus(errText(res.error), true);
+      say('err', 'mcp', errText(res.error));
+    }
+  });
+
+  on('agent_signin_done', function (res) {
+    $('connect').disabled = false;
+    if (!res.ok) {
+      setStatus(errText(res.error), true);
+      return say('err', 'mcp', errText(res.error));
+    }
+    $('connect').hidden = true;
+    setStatus('signed in');
+    say('tool', 'mcp', 'authorized');
     call('agent_connect');
   });
 
   on('agent_connect', function (res) {
     if (!res.ok) {
       setConn(false, 'error');
+      $('connect').hidden = false;
       return say('err', 'mcp', errText(res.error));
     }
+    $('signout').hidden = state.authMode !== 'oauth';
     var s = res.data.server || {};
     setConn(true, 'connected');
     say('tool', 'mcp', 'ready — ' + (s.name || 'server') + ' ' + (s.version || ''));

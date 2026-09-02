@@ -5,6 +5,7 @@ require_relative '../settings'
 require_relative '../history'
 require_relative '../render'
 require_relative '../agent/session'
+require_relative '../mcp/oauth'
 
 module Kaitoio
   module Dialogs
@@ -37,7 +38,7 @@ module Kaitoio
         )
         @dialog.set_file(File.join(HTML_DIR, 'agent.html'))
         attach_callbacks(@dialog)
-        @dialog.set_on_closed { stop_polling; @dialog = nil }
+        @dialog.set_on_closed { stop_polling; stop_auth_pump; Kaitoio::Mcp::OAuth.stop_listener; @dialog = nil }
         @dialog.show
         @dialog
       end
@@ -69,10 +70,13 @@ module Kaitoio
       def attach_callbacks(dialog)
         dialog.add_action_callback('agent_boot') do |_ctx|
           guard('agent_boot') do
-            cfg = Kaitoio::Settings.load
+            cfg   = Kaitoio::Settings.load
+            token = cfg['mcp_token'].to_s
             { 'version'  => Kaitoio::VERSION,
               'mcpUrl'   => cfg['mcp_url'],
-              'hasKey'   => !(cfg['mcp_api_key'].to_s.empty? && cfg['api_key'].to_s.empty?),
+              # MCP is its own API: a REST key is never used here.
+              'authMode' => token.empty? ? 'oauth' : 'token',
+              'signedIn' => !token.empty? || Kaitoio::Mcp::OAuth.signed_in?,
               'attached' => Kaitoio::Agent::Session.attached,
               'history'  => Kaitoio::History.list.select { |h| h['kind'] == 'agent' } }
           end
@@ -80,6 +84,25 @@ module Kaitoio
 
         dialog.add_action_callback('agent_connect') do |_ctx|
           guard('agent_connect') { Kaitoio::Agent::Session.status }
+        end
+
+        # OAuth: open the browser, then poll the loopback listener from a
+        # timer. Blocking on accept would freeze SketchUp.
+        dialog.add_action_callback('agent_signin') do |_ctx|
+          guard('agent_signin') do
+            url = Kaitoio::Mcp::OAuth.begin_sign_in
+            UI.openURL(url)
+            start_auth_pump
+            { 'opened' => true, 'url' => url }
+          end
+        end
+
+        dialog.add_action_callback('agent_signout') do |_ctx|
+          guard('agent_signout') do
+            Kaitoio::Mcp::OAuth.forget!
+            Kaitoio::Agent::Session.reset!
+            { 'signedOut' => true }
+          end
         end
 
         dialog.add_action_callback('agent_capture') do |_ctx|
@@ -121,6 +144,39 @@ module Kaitoio
             { 'reset' => true }
           end
         end
+      end
+
+      # ---- oauth pump ------------------------------------------------
+
+      AUTH_TIMEOUT = 180
+
+      def start_auth_pump
+        stop_auth_pump
+        @auth_deadline = Time.now + AUTH_TIMEOUT
+        @auth_timer = UI.start_timer(0.5, true) { auth_tick }
+        nil
+      end
+
+      def stop_auth_pump
+        UI.stop_timer(@auth_timer) if @auth_timer
+        @auth_timer = nil
+      end
+
+      def auth_tick
+        state = Kaitoio::Mcp::OAuth.pump
+        if state == :done
+          stop_auth_pump
+          push('agent_signin_done', 'ok' => true, 'data' => { 'signedIn' => true })
+        elsif Time.now > @auth_deadline
+          stop_auth_pump
+          Kaitoio::Mcp::OAuth.stop_listener
+          push('agent_signin_done', 'ok' => false, 'error' => 'Sign-in timed out after 3 minutes.')
+        end
+      rescue => e
+        stop_auth_pump
+        Kaitoio::Mcp::OAuth.stop_listener
+        Kaitoio.log_error('MCP sign-in failed', e)
+        push('agent_signin_done', 'ok' => false, 'error' => "#{e.class}: #{e.message}")
       end
 
       # ---- run lifecycle --------------------------------------------

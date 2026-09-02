@@ -131,7 +131,7 @@
     setVal('dl-dir', text(s.download_dir || downloadDir));
     setVal('mcp-url', text(s.mcp_url));
     var mh = $('mcp-key-hint');
-    if (mh) mh.textContent = s.mcp_api_key_set ? '(' + s.mcp_api_key_hint + ' stored)' : '(not set — falls back to the API key)';
+    if (mh) mh.textContent = s.mcp_token_set ? '(' + s.mcp_token_hint + ' stored)' : '(not set — OAuth is used)';
   }
 
   // ---- node types -------------------------------------------------------
@@ -483,7 +483,7 @@
       capture_max_edge: Number($('max-edge').value) || 1024,
       download_dir: val('dl-dir'),
       mcp_url: val('mcp-url'),
-      mcp_api_key: val('mcp-key')          // blank = keep stored key
+      mcp_token: val('mcp-key')          // blank = keep stored key
     });
   });
 

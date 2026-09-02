@@ -10,7 +10,11 @@
 <body>
   <header class="topbar">
     <div class="brand">Kaitoi Agent <span id="version" class="muted"></span></div>
-    <div id="conn" class="pill pill-warn">not connected</div>
+    <div class="topbar-right">
+      <button id="connect" class="ghost small" hidden>Connect</button>
+      <button id="signout" class="ghost small" hidden>Sign out</button>
+      <div id="conn" class="pill pill-warn">not connected</div>
+    </div>
   </header>
 
   <main class="agent-grid">

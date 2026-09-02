@@ -4,6 +4,7 @@ require 'json'
 require 'securerandom'
 
 require_relative '../api/errors'
+require_relative 'oauth'
 
 module Kaitoio
   module Mcp
@@ -21,16 +22,30 @@ module Kaitoio
       def initialize(url: nil, api_key: nil, timeout: nil)
         cfg      = Kaitoio::Settings.load
         @url     = (url || cfg['mcp_url']).to_s
-        # The MCP key is separate: it needs mcp:read / mcp:write, which a
-        # plain REST key does not carry.
-        @api_key = (api_key || cfg['mcp_api_key']).to_s
-        @api_key = cfg['api_key'].to_s if @api_key.empty?
+        # MCP is a separate API from REST. A REST key is rejected there
+        # (invalid_token), so there is deliberately no fallback to it:
+        # either a static MCP-scoped token is configured, or we use OAuth.
+        @static_key = (api_key || cfg['mcp_token']).to_s
         @timeout = (timeout || cfg['request_timeout_seconds'] || 120).to_i
         @initialized = false
       end
 
       def configured?
-        !@url.empty? && !@api_key.empty?
+        !@url.empty? && (!@static_key.empty? || Kaitoio::Mcp::OAuth.signed_in?)
+      end
+
+      def auth_mode
+        @static_key.empty? ? 'oauth' : 'token'
+      end
+
+      def bearer
+        return @static_key unless @static_key.empty?
+        token = Kaitoio::Mcp::OAuth.access_token
+        raise Kaitoio::AuthError.new(
+          'Not signed in to the Kaitoi MCP server. Use Connect in the Agent panel.',
+          code: 'NOT_SIGNED_IN'
+        ) unless token
+        token
       end
 
       # ---- handshake -------------------------------------------------
@@ -108,7 +123,7 @@ module Kaitoio
       def post(body, expect_body: true)
         uri = URI.parse(@url)
         req = Net::HTTP::Post.new(uri)
-        req['Authorization']        = "Bearer #{@api_key}"
+        req['Authorization']        = "Bearer #{bearer}"
         req['Content-Type']         = 'application/json'
         req['Accept']               = 'application/json, text/event-stream'
         req['MCP-Protocol-Version'] = PROTOCOL_VERSION
@@ -177,12 +192,16 @@ module Kaitoio
         msg ||= "HTTP #{res.code}"
 
         case res.code.to_i
-        when 401 then raise Kaitoio::AuthError.new(msg, status: 401, code: code)
+        when 401
+          # An expired OAuth session looks the same as a bad token; make the
+          # remedy explicit rather than leaving "invalid_token".
+          hint = auth_mode == 'oauth' ? ' Use Connect in the Agent panel to sign in again.' : ''
+          raise Kaitoio::AuthError.new("#{msg}#{hint}", status: 401, code: code)
         when 403
           # The common case: a REST key without mcp:read / mcp:write.
           raise Kaitoio::AuthError.new(
-            "#{msg} Create a Kaitoi API key with the mcp:read and mcp:write scopes " \
-            'and set it as the MCP key in Preferences.', status: 403, code: code
+            "#{msg} The MCP API needs mcp:read / mcp:write; a REST key does not " \
+            'carry them. Use Connect in the Agent panel to sign in.', status: 403, code: code
           )
         when 404 then raise Kaitoio::NotFound.new(msg, status: 404, code: code)
         else raise Kaitoio::Error.new(msg, status: res.code.to_i, code: code)
