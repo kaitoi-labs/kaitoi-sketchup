@@ -194,6 +194,13 @@ module Kaitoio
 
       AUTH_TIMEOUT = 180
 
+      # Status vocabulary is not guaranteed, so match generously and never
+      # poll indefinitely.
+      TERMINAL = %w[succeeded success completed complete done finished
+                    failed error canceled cancelled timeout].freeze
+      FAILED   = %w[failed error canceled cancelled timeout].freeze
+      MAX_RUN_SECONDS = 600
+
       def start_auth_pump
         stop_auth_pump
         @auth_deadline = Time.now + AUTH_TIMEOUT
@@ -268,11 +275,12 @@ module Kaitoio
 
       def start_polling(execution_id, prompt)
         stop_polling
-        @exec_id     = execution_id
-        @prompt      = prompt
-        @run_started = Time.now
-        @seen_events = {}
-        @last_percent = 0
+        @exec_id        = execution_id
+        @prompt         = prompt
+        @run_started    = Time.now
+        @seen_events    = {}
+        @last_percent   = 0
+        @saw_completion = false
         interval = (Kaitoio::Settings.load['poll_interval_seconds'] || 2).to_i
         interval = 2 if interval <= 0
         @timer = UI.start_timer(interval, true) { tick }
@@ -281,14 +289,30 @@ module Kaitoio
 
       # Everything the panel needs to show real progress rather than a
       # spinner: percent, the newest event line, the node, and elapsed time.
+      def normalize_status(body)
+        (body['status'] || body['state'] || body['executionStatus']).to_s.strip.downcase
+      end
+
+      def outputs?(body)
+        out = body['outputs'] || body['output']
+        out.is_a?(Hash) ? !out.empty? : !out.to_s.empty?
+      end
+
+      COMPLETION_EVENTS = %w[node.completed execution.completed run.completed
+                             mcp.execution.completed execution.succeeded].freeze
+
       def progress_payload(status, body)
         fresh = []
-        Kaitoio::Agent::Session.events(@exec_id).each do |ev|
+        # get_graph_run_events returns newest first; walk oldest-first so the
+        # log reads forwards and the "latest" line is genuinely the latest.
+        Kaitoio::Agent::Session.events(@exec_id).reverse.each do |ev|
           key = ev['id'] || "#{ev['type']}:#{ev['timestamp'] || ev['createdAt']}:#{ev['message']}"
           next if @seen_events.key?(key)
           @seen_events[key] = true
           fresh << ev
         end
+
+        @saw_completion ||= fresh.any? { |e| COMPLETION_EVENTS.include?(e['type'].to_s) }
 
         latest = fresh.reverse.find { |e| !e['message'].to_s.strip.empty? } || fresh.last
         pct    = fresh.map { |e| e['progress'] }.compact.map { |v| (v.to_f * 100).round }.max
@@ -308,10 +332,14 @@ module Kaitoio
           'elapsed' => (Time.now - (@run_started || Time.now)).round }
       end
 
+      def short_id(id)
+        id.to_s.sub(/\Amcp_run_/, '')[0, 8]
+      end
+
       def event_line(execution_id, ev)
         pct = ev['progress'].nil? ? '' : " #{(ev['progress'].to_f * 100).round}%"
         msg = ev['message'].to_s
-        "[#{execution_id.to_s[0, 8]}] #{ev['type']}#{pct}#{msg.empty? ? '' : ' ' + msg}"
+        "[#{short_id(execution_id)}] #{ev['type']}#{pct}#{msg.empty? ? '' : ' ' + msg}"
       end
 
       def stop_polling
@@ -325,18 +353,33 @@ module Kaitoio
 
         res    = Kaitoio::Agent::Session.poll(@exec_id)
         body   = res['structured'] || {}
-        status = (body['status'] || '').to_s
+        status = normalize_status(body)
 
         push('agent_status', 'ok' => true, 'data' => progress_payload(status, body))
-        return unless %w[succeeded failed canceled completed].include?(status)
+
+        # A run that finishes but whose status string we do not recognise used
+        # to poll forever and never deliver, so completion is also inferred
+        # from the events and from outputs appearing on the record.
+        finished = TERMINAL.include?(status) || @saw_completion || outputs?(body)
+        timed_out = (Time.now - (@run_started || Time.now)) > MAX_RUN_SECONDS
+
+        unless finished || timed_out
+          return
+        end
 
         id = @exec_id
         prompt = @prompt
         stop_polling
-        if %w[succeeded completed].include?(status)
-          deliver(id, prompt)
+
+        if timed_out && !finished
+          return push('agent_output', 'ok' => false,
+                      'error' => "Gave up after #{MAX_RUN_SECONDS / 60} minutes (last status: #{status})")
+        end
+
+        if FAILED.include?(status)
+          push('agent_output', 'ok' => false, 'error' => "Run #{status}: #{failure_reason(res)}")
         else
-          push('agent_output', 'ok' => false, 'error' => "Run #{status}: #{res['text']}")
+          deliver(id, prompt)
         end
       rescue => e
         Kaitoio.log_error('agent poll failed', e)

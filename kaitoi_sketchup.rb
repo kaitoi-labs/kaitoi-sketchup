@@ -72,10 +72,17 @@ module Kaitoio
 
   def self.reload!
     base = File.dirname(__FILE__)
+    # Re-loading a file redefines its constants, and Ruby warns about each
+    # one. That is expected here and buried the real output, so warnings are
+    # suppressed for the duration of the reload only.
+    previous = $VERBOSE
+    $VERBOSE = nil
     RELOAD_FILES.each { |f| load File.join(base, "#{f}.rb") }
+    $VERBOSE = previous
     log "Reloaded #{RELOAD_FILES.length} files (v#{VERSION})"
     true
   rescue => e
+    $VERBOSE = previous if defined?(previous)
     log_error('reload failed', e)
     false
   end
