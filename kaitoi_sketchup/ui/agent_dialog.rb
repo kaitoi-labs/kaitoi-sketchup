@@ -224,14 +224,34 @@ module Kaitoio
         unless execution_id
           # No execution id means the run never started -- surface why rather
           # than the old placeholder, which left the panel stuck on
-          # "generating…" with nothing to act on.
-          detail = run && (run['text'] || run['status'])
+          # "generating…" with nothing to act on. The server's reply can be
+          # kilobytes of candidate JSON, so reduce it to its message.
           return push('agent_output', 'ok' => false,
-                      'error' => "The run did not start. #{detail}".strip)
+                      'error' => "The run did not start. #{failure_reason(run)}".strip)
         end
         out = Kaitoio::Agent::Session.collect_output(execution_id, prompt)
         out['dataUri'] = preview_uri(out['entry']) if out['entry']
         push('agent_output', 'ok' => true, 'data' => out)
+      end
+
+      # Pull the human-readable message out of an MCP failure payload.
+      def failure_reason(run)
+        raw = run && (run['text'] || run['status']).to_s
+        return '' if raw.empty?
+        begin
+          json = raw[/\{.*\}/m]
+          if json
+            obj = JSON.parse(json)
+            if obj.is_a?(Hash)
+              msg  = obj['message'] || obj['error']
+              code = obj['code']
+              return [code, msg].compact.join(': ') unless msg.to_s.empty? && code.to_s.empty?
+            end
+          end
+        rescue JSON::ParserError
+          nil
+        end
+        raw.length > 300 ? "#{raw[0, 300]}…" : raw
       end
 
       def start_polling(execution_id, prompt)

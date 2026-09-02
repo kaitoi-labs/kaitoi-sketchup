@@ -69,6 +69,11 @@ module Kaitoio
         Set "generate" only when the user asks to create or change media.
         For greetings, questions, or discussion about the model, use null.
         Keep "reply" short and conversational.
+
+        Make "query" specific enough to identify one node. A bare "image to
+        image" matches many nodes equally and cannot be run; name the model or
+        the exact operation instead, e.g. "FLUX SRPO image to image",
+        "Qwen image edit", "remove background", "image to 3D".
       PROMPT
 
       def chat_node
@@ -237,6 +242,7 @@ module Kaitoio
         inputs['prompt'] = prompt.to_s if prompt && !prompt.to_s.strip.empty?
         inputs[image_input_name] = @attached if use_capture && @attached && image_input_name
         args['inputs'] = inputs unless inputs.empty?
+        @last_inputs = inputs
         @last_prompt = prompt
 
         res = mcp.call_tool(RUN_TOOL, args)
@@ -245,9 +251,44 @@ module Kaitoio
 
       # MCP tells us which input it wanted; bind the capture to that name and
       # retry rather than guessing a pin name up front.
-      def interpret(res, text, key, use_capture)
+      def interpret(res, text, key, use_capture, resolved = false)
         body = res['structured'] || {}
         blob = "#{res['text']} #{body.to_json rescue ''}"
+
+        # The search matched several nodes equally well, so nothing ran. The
+        # server hands back ranked candidates and tells us to pick one by
+        # exact type -- do that instead of surfacing a wall of JSON.
+        if !resolved && blob.include?('AMBIGUOUS_NODE_MATCH')
+          picked = best_candidate(body)
+          if picked
+            Kaitoio.log("ambiguous match for #{text.inspect}; choosing #{picked['nodeType']}")
+            args = { 'node_type' => picked['nodeType'], 'wait_seconds' => 25,
+                     'idempotency_key' => SecureRandom.uuid }
+            args['inputs'] = @last_inputs if @last_inputs && !@last_inputs.empty?
+            args['confirm_cost'] = true if cost_allowed?
+            out = interpret(mcp.call_tool('run_node_by_type', args), text, key, false, true)
+            return out.merge('selectedNode' => {
+              'nodeType' => picked['nodeType'],
+              'title'    => picked['title'],
+              'score'    => picked['rankScore'],
+              'from'     => 'ambiguous'
+            })
+          end
+        end
+
+        # run_node_by_search may also name its pick without running it.
+        if !resolved && body['selectedNode'].is_a?(Hash) && body['executionId'].nil?
+          sel = body['selectedNode']
+          type = sel['nodeType'] || sel['type']
+          if type
+            args = { 'node_type' => type, 'wait_seconds' => 25,
+                     'idempotency_key' => SecureRandom.uuid }
+            args['inputs'] = @last_inputs if @last_inputs && !@last_inputs.empty?
+            args['confirm_cost'] = true if cost_allowed?
+            out = interpret(mcp.call_tool('run_node_by_type', args), text, key, false, true)
+            return out.merge('selectedNode' => { 'nodeType' => type, 'title' => sel['title'], 'from' => 'selected' })
+          end
+        end
 
         if blob.include?('COST_CONFIRMATION_REQUIRED')
           return { 'kind' => 'cost', 'preview' => body['costPreview'] || body,
@@ -279,6 +320,14 @@ module Kaitoio
 
         { 'kind' => 'result', 'executionId' => execution_id, 'status' => status,
           'text' => res['text'], 'body' => body }
+      end
+
+      # Highest ranked candidate wins; rankScore is the server's own ordering.
+      def best_candidate(body)
+        cands = body['candidates']
+        return nil unless cands.is_a?(Array) && !cands.empty?
+        cands.select { |c| c.is_a?(Hash) && c['nodeType'] }
+             .max_by { |c| [c['rankScore'].to_f, c['confidence'].to_f] }
       end
 
       def missing_input_name(body, text)

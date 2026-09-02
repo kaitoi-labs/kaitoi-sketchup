@@ -312,6 +312,13 @@
 
     if (d.generate) {
       say('tool', 'run', d.generate.query + (d.generate.prompt ? ' — "' + d.generate.prompt + '"' : ''));
+      // The search can match several nodes; show which one was actually used.
+      var sel = d.run && d.run.selectedNode;
+      if (sel) {
+        say('tool', 'node', text(sel.title || sel.nodeType) +
+          (sel.score ? ' (score ' + Number(sel.score).toFixed(2) + ')' : '') +
+          (sel.from === 'ambiguous' ? ' — chosen from several close matches' : ''));
+      }
       updateProgress({ status: 'starting', percent: 0, elapsed: 0,
                        message: d.generate.prompt || d.generate.query });
       return;                       // agent_status / agent_output follow
