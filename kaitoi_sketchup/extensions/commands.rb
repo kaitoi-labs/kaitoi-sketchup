@@ -1,5 +1,6 @@
 require_relative '../settings'
 require_relative '../render'
+require_relative '../ui/credentials_dialog'
 
 module Kaitoio
   module Extensions
@@ -8,53 +9,14 @@ module Kaitoio
     module Commands
       module_function
 
+      # Both open the same editor. UI.inputbox could not show a full token
+      # or endpoint -- its fields are fixed-width and its labels truncate.
       def set_api_key
-        current = Kaitoio::Settings.api_key
-        masked  = current.empty? ? '' : "#{current[0, 6]}…#{current[-4, 4]}"
-        prompts = ['API key', 'Base URL']
-        defaults = [masked, Kaitoio::Settings.load['base_url']]
-
-        result = UI.inputbox(prompts, defaults, 'Kaitoio — API key')
-        return false unless result
-
-        key, base = result
-        # An untouched masked field means "keep the existing key".
-        Kaitoio::Settings.set_api_key(key) unless key.to_s.strip.empty? || key == masked
-        Kaitoio::Settings.set_base_url(base) unless base.to_s.strip.empty?
-
-        UI.messagebox("Kaitoio settings saved.\n\n#{Kaitoio::Settings.path}")
-        true
-      rescue => e
-        Kaitoio.log_error('set_api_key failed', e)
-        UI.messagebox("Could not save settings:\n#{e.message}")
-        false
+        Kaitoio::Dialogs::CredentialsDialog.show('api')
       end
 
-      # MCP is a separate API from REST, with its own credential. Stored in
-      # the same config.json (mode 0600) under mcp_token.
       def set_mcp_token
-        cfg     = Kaitoio::Settings.load
-        current = cfg['mcp_token'].to_s
-        masked  = current.empty? ? '' : "#{current[0, 6]}…#{current[-4, 4]}"
-
-        result = UI.inputbox(['MCP token', 'MCP endpoint'],
-                             [masked, cfg['mcp_url'].to_s],
-                             'Kaitoio — MCP token')
-        return false unless result
-
-        key, url = result
-        updates = {}
-        updates['mcp_token'] = key.to_s.strip unless key.to_s.strip.empty? || key == masked
-        updates['mcp_url']     = url.to_s.strip unless url.to_s.strip.empty?
-        Kaitoio::Settings.update(updates) unless updates.empty?
-
-        UI.messagebox("MCP settings saved.\n\n#{Kaitoio::Settings.path}\n\n" \
-                      'Leave the key blank to sign in with OAuth instead.')
-        true
-      rescue => e
-        Kaitoio.log_error('set_mcp_token failed', e)
-        UI.messagebox("Could not save MCP settings:\n#{e.message}")
-        false
+        Kaitoio::Dialogs::CredentialsDialog.show('mcp')
       end
 
       def test_connection

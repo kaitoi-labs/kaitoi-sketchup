@@ -51,7 +51,7 @@ Licensed under the [Apache License, Version 2.0](../LICENSE).
    > reloads the HTML/JS, not the Ruby.
 
 3. **Set your API key** (and confirm the base URL):
-   `Plugins > Kaitoio > Set API Key...`, or the **Preferences** tab of the
+   `Plugins > Kaitoio > Credentials...`, or the **Preferences** tab of the
    panel. The key is saved to `~/.kaitoi_sketchup/config.json` (mode `0600`).
 
 4. **Open the panel:** `Plugins > Kaitoio > Open Panel...`
@@ -114,14 +114,15 @@ Plugins > Kaitoio
   Open Panel...
   Kaitoi Agent...
   ─────
-  Set API Key...
+  Credentials...
   Set MCP Token...
   ─────
   Reload (dev)
 ```
 
 The Panel is the recommended way to work; the menu opens it, opens the Agent,
-and offers quick credential entry. **Reload (dev)** re-`load`s the Ruby files
+and opens the credentials editor (a resizable HtmlDialog — the native
+`UI.inputbox` clipped long tokens and endpoints). **Reload (dev)** re-`load`s the Ruby files
 without restarting SketchUp.
 
 ---
