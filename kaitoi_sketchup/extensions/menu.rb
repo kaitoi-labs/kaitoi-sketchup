@@ -14,7 +14,7 @@ module Kaitoio
       def self.install
         menu = UI.menu('Plugins').add_submenu('Kaitoio')
 
-        menu.add_item('Open Panel...')  { Kaitoio::Dialogs::Dialog.show }
+        menu.add_item('Kaitoi Nodes')   { Kaitoio::Dialogs::Dialog.show }
         menu.add_item('Kaitoi Agent...') { Kaitoio::Dialogs::AgentDialog.show }
         menu.add_separator
         menu.add_item('Credentials...')  { Kaitoio::Dialogs::CredentialsDialog.show('api') }

@@ -35,7 +35,7 @@ module Kaitoio
         end
 
         @dialog = UI::HtmlDialog.new(
-          dialog_title:    "Kaitoio #{Kaitoio::VERSION}",
+          dialog_title:    "Kaitoi Nodes #{Kaitoio::VERSION}",
           preferences_key: 'io.kaitoi.sketchup.panel',
           scrollable:      true,
           resizable:       true,

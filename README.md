@@ -54,7 +54,7 @@ Licensed under the [Apache License, Version 2.0](../LICENSE).
    `Plugins > Kaitoio > Credentials...`, or the **Preferences** tab of the
    panel. The key is saved to `~/.kaitoi_sketchup/config.json` (mode `0600`).
 
-4. **Open the panel:** `Plugins > Kaitoio > Open Panel...`
+4. **Open the panel:** `Plugins > Kaitoio > Kaitoi Nodes`
 
 Your Kaitoio API key needs at least these scopes (request them when creating
 the key in the Kaitoio dashboard):
@@ -111,7 +111,7 @@ The panel has four tabs: **Render**, **Templates**, **Generations**,
 
 ```
 Plugins > Kaitoio
-  Open Panel...
+  Kaitoi Nodes
   Kaitoi Agent...
   ─────
   Credentials...
