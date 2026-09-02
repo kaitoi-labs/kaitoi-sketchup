@@ -200,6 +200,9 @@ module Kaitoio
                     failed error canceled cancelled timeout].freeze
       FAILED   = %w[failed error canceled cancelled timeout].freeze
       MAX_RUN_SECONDS = 600
+      # Once a completion signal appears, try collecting on every Nth tick
+      # rather than every tick, to avoid a third MCP call per second.
+      COLLECT_EVERY = 2
 
       def start_auth_pump
         stop_auth_pump
@@ -241,6 +244,7 @@ module Kaitoio
 
       def deliver(execution_id, prompt, run = nil)
         unless execution_id
+          stop_polling
           # No execution id means the run never started -- surface why rather
           # than the old placeholder, which left the panel stuck on
           # "generating…" with nothing to act on. The server's reply can be
@@ -251,12 +255,15 @@ module Kaitoio
         out = Kaitoio::Agent::Session.collect_output(execution_id, prompt)
 
         if out['kind'] == 'pending'
-          # Outputs are not ready yet; resume polling rather than ending the
-          # turn with an envelope the user cannot act on.
+          # Outputs are not ready yet. If the timer is still running, just let
+          # it come back round -- restarting it here would reset the elapsed
+          # clock and the timeout could never fire.
           Kaitoio.log('outputs not ready yet; still polling')
-          return start_polling(execution_id, prompt)
+          return running? ? nil : start_polling(execution_id, prompt)
         end
 
+        # Real media: this is what ends the turn.
+        stop_polling
         out['dataUri'] = preview_uri(out['entry']) if out['entry']
         push('agent_output', 'ok' => true, 'data' => out)
       end
@@ -290,6 +297,7 @@ module Kaitoio
         @last_percent   = 0
         @saw_completion = false
         @last_logged_message = nil
+        @collect_attempts = 0
         interval = (Kaitoio::Settings.load['poll_interval_seconds'] || 2).to_i
         interval = 2 if interval <= 0
         @timer = UI.start_timer(interval, true) { tick }
@@ -298,6 +306,14 @@ module Kaitoio
 
       # Everything the panel needs to show real progress rather than a
       # spinner: percent, the newest event line, the node, and elapsed time.
+      # Events arrive newest-first, but that is not guaranteed; sort on a
+      # timestamp when one is present rather than assuming either direction.
+      def chronological(events)
+        stamped = events.select { |e| e['timestamp'] || e['createdAt'] }
+        return events.reverse unless stamped.length == events.length && !events.empty?
+        events.sort_by { |e| (e['timestamp'] || e['createdAt']).to_s }
+      end
+
       def normalize_status(body)
         (body['status'] || body['state'] || body['executionStatus']).to_s.strip.downcase
       end
@@ -314,7 +330,7 @@ module Kaitoio
         fresh = []
         # get_graph_run_events returns newest first; walk oldest-first so the
         # log reads forwards and the "latest" line is genuinely the latest.
-        Kaitoio::Agent::Session.events(@exec_id).reverse.each do |ev|
+        chronological(Kaitoio::Agent::Session.events(@exec_id)).each do |ev|
           key = ev['id'] || "#{ev['type']}:#{ev['timestamp'] || ev['createdAt']}:#{ev['message']}"
           next if @seen_events.key?(key)
           @seen_events[key] = true
@@ -368,6 +384,10 @@ module Kaitoio
         "[#{short_id(execution_id)}] #{ev['type']}#{pct}#{msg.empty? ? '' : ' ' + msg}"
       end
 
+      def running?
+        !@timer.nil?
+      end
+
       def stop_polling
         UI.stop_timer(@timer) if @timer
         @timer   = nil
@@ -386,30 +406,32 @@ module Kaitoio
         # A run that finishes but whose status string we do not recognise used
         # to poll forever and never deliver, so completion is also inferred
         # from the events and from outputs appearing on the record.
-        # Only the status endpoint decides terminality. Inferring it from a
-        # node.completed event delivered while the execution was still
-        # settling, and get_displayable_outputs answered "still running".
-        finished = TERMINAL.include?(status)
         timed_out = (Time.now - (@run_started || Time.now)) > MAX_RUN_SECONDS
 
-        unless finished || timed_out
-          return
+        if FAILED.include?(status)
+          id = @exec_id
+          stop_polling
+          return push('agent_output', 'ok' => false,
+                      'error' => "Run #{status}: #{failure_reason(res)}")
         end
 
-        id = @exec_id
-        prompt = @prompt
-        stop_polling
-
-        if timed_out && !finished
+        if timed_out
+          stop_polling
           return push('agent_output', 'ok' => false,
                       'error' => "Gave up after #{MAX_RUN_SECONDS / 60} minutes (last status: #{status})")
         end
 
-        if FAILED.include?(status)
-          push('agent_output', 'ok' => false, 'error' => "Run #{status}: #{failure_reason(res)}")
-        else
-          deliver(id, prompt)
-        end
+        # Scratch runs can sit at "running" long after the node has finished
+        # and written its output, so status alone never ends the turn. Any
+        # completion signal only *triggers* a collection attempt; the turn
+        # ends when media actually comes back. deliver() resumes polling if
+        # the outputs are still settling, so an early trigger is harmless.
+        return unless TERMINAL.include?(status) || @saw_completion || outputs?(body)
+
+        @collect_attempts = @collect_attempts.to_i + 1
+        return unless (@collect_attempts % COLLECT_EVERY) == 1   # throttle the extra call
+
+        deliver(@exec_id, @prompt)
       rescue => e
         Kaitoio.log_error('agent poll failed', e)
         stop_polling
