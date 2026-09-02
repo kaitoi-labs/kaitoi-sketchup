@@ -458,6 +458,33 @@ module Kaitoio
       # ---- results ---------------------------------------------------
 
       # Resolve an execution's media to signed URLs, download the first one.
+      # get_displayable_outputs answers {"pending":true,...} while an
+      # execution is still settling; that is not a result.
+      def pending?(body, text)
+        return true if body['pending'] == true
+        status = body['status'].to_s.downcase
+        return true if %w[running queued pending accepted].include?(status)
+        text.to_s.include?('still running')
+      end
+
+      # Never surface a raw MCP envelope as chat; keep it short and human.
+      def summarize(text)
+        raw = text.to_s.strip
+        begin
+          json = raw[/\{.*\}/m]
+          if json
+            obj = JSON.parse(json)
+            if obj.is_a?(Hash)
+              msg = obj['message'] || obj['error'] || obj['status']
+              return msg.to_s unless msg.to_s.empty?
+            end
+          end
+        rescue JSON::ParserError
+          nil
+        end
+        raw.length > 240 ? "#{raw[0, 240]}…" : raw
+      end
+
       def collect_output(execution_id, prompt)
         res  = mcp.call_tool('get_displayable_outputs', { 'execution_id' => execution_id })
         body = res['structured'] || {}

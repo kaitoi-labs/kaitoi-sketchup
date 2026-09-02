@@ -28,12 +28,15 @@ def defs_in(src)
 end
 
 # A comment mentioning int() or a regex containing text( is not a call.
+# Newlines are excluded from the string patterns: a stray quote inside a
+# heredoc used to pair across lines and blank out whole regions of a file,
+# hiding every call inside them.
 def strip_noise(raw)
-  raw.gsub(/^\s*#.*$/, '')
-     .gsub(/"(?:[^"\\]|\\.)*"/, '""')
-     .gsub(/'(?:[^'\\]|\\.)*'/, "''")
-     .gsub(/%r\{[^}]*\}/, 'RX')
-     .gsub(%r{/(?:[^/\\\n]|\\.)+/[imx]*}, 'RX')
+  out = raw.gsub(/^\s*#.*$/, '')
+  out = out.gsub(/"(?:[^"\\\n]|\\.)*"/, '""')
+  out = out.gsub(/'(?:[^'\\\n]|\\.)*'/, "''")
+  out = out.gsub(/%r\{[^}]*\}/, 'RX')
+  out.gsub(%r{/(?:[^/\\\n]|\\.)+/[imx]*}, 'RX')
 end
 
 all_defs = {}
@@ -44,7 +47,9 @@ failures = []
 ALL.each do |path|
   raw   = File.read(path, encoding: 'UTF-8')
   src   = strip_noise(raw)
-  calls = src.scan(/(?<![.:@$\w])([a-z_][a-zA-Z0-9_]*)\(/).flatten.uniq
+  # Trailing ? and ! are part of the name: without them `pending?(...)`
+  # matched nothing and an undefined predicate slipped through.
+  calls = src.scan(/(?<![.:@$\w])([a-z_][a-zA-Z0-9_]*[?!]?)\(/).flatten.uniq
 
   calls.each do |c|
     next if KNOWN.include?(c) || defined_anywhere.include?(c)
