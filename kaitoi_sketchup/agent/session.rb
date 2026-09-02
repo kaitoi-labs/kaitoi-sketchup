@@ -32,6 +32,7 @@ module Kaitoio
         @image_input_name = nil
         @history = []
         @allow_cost = false
+        @last_asset = nil
       end
 
       def history
@@ -172,6 +173,23 @@ module Kaitoio
 
       def attached
         @attached
+      end
+
+      # Path of the most recent generated file, so a turn can build on the
+      # previous result instead of re-capturing the viewport.
+      def last_asset
+        @last_asset
+      end
+
+      def last_asset=(path)
+        @last_asset = path
+      end
+
+      # Attach the previous result as the input for the next run.
+      def attach_last_asset
+        raise Kaitoio::Error.new('Nothing generated yet in this session') if @last_asset.to_s.empty?
+        raise Kaitoio::Error.new("Previous result is gone: #{@last_asset}") unless File.file?(@last_asset)
+        attach_capture(@last_asset)
       end
 
       # The server's tool set is the authority; the published README lists a
@@ -515,6 +533,7 @@ module Kaitoio
           'path'        => got['path']
         }
         Kaitoio::History.add(entry)
+        @last_asset = entry['path']
         { 'kind' => 'media', 'entry' => entry, 'text' => res['text'], 'urlCount' => urls.length }
       rescue Kaitoio::Error => e
         Kaitoio.log_error('agent output collection failed', e)

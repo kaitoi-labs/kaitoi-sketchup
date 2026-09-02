@@ -103,6 +103,9 @@ allPass &= run(H + '/agent.html', H + '/agent.js', 'agent.js', [
   { name: 'boot payload', run: (els, sb, recv) => recv('agent_boot', { ok: true, data: {
       version: '0.1.0', mcpUrl: 'https://mcp.studio.kaitoi.io', authMode: 'token',
       signedIn: true, attached: null, history: [] } }) },
+  { name: 'use-last disabled before any result', run: (els) => {
+      if (els.get('use-last').disabled !== true) throw new Error('should start disabled');
+  }},
   { name: 'chat reply', run: (els, sb, recv) => recv('agent_send', { ok: true, data: {
       kind: 'reply', reply: 'Hi there!', generate: null } }) },
   { name: 'reply + generate', run: (els, sb, recv) => recv('agent_send', { ok: true, data: {
@@ -126,6 +129,23 @@ allPass &= run(H + '/agent.html', H + '/agent.js', 'agent.js', [
   { name: 'failed output', run: (els, sb, recv) => recv('agent_output', { ok: false, error: 'Run failed: boom' }) },
   { name: 'error object not [object Object]', run: (els, sb, recv) => recv('agent_output', {
       ok: false, error: { code: 'EXECUTION_ERROR', message: 'Retopology failed' } }) },
+
+  // "use last asset" only unlocks once something has been generated.
+  { name: 'media output enables use-last', run: (els, sb, recv) => {
+      recv('agent_output', { ok: true, data: { kind: 'media',
+        entry: { path: '/tmp/gen1.png', contentType: 'image/png' },
+        lastAsset: '/tmp/gen1.png', dataUri: 'data:image/png;base64,AA' } });
+      if (els.get('use-last').disabled !== false) throw new Error('should be enabled after a result');
+  }},
+  { name: 'checked use-last is sent with the turn', expect: 'agent_send', run: (els) => {
+      els.get('use-last').checked = true;
+      els.get('input').value = 'now make it night';
+      els.get('send').fire('click');
+  }},
+  { name: 'chained input renders', run: (els, sb, recv) => recv('agent_input', { ok: true, data: {
+      source: 'last result', filename: 'abc.png', path: '/tmp/gen1.png',
+      dataUri: 'data:image/png;base64,AA' } }) },
+  { name: 'Open folder', expect: 'agent_open_folder', run: (els) => els.get('open-folder').fire('click') },
 ]);
 
 allPass &= run(H + '/index.html', H + '/app.js', 'app.js', [

@@ -14,7 +14,7 @@
 
   var handlers = {};
   var state = { busy: false, attached: null, pendingCost: null, allowCost: false,
-                lastSent: null, costButtons: null, progress: null };
+                lastSent: null, costButtons: null, progress: null, lastAsset: null };
 
   function call(channel, payload) {
     if (!window.sketchup || typeof window.sketchup[channel] !== 'function') {
@@ -117,6 +117,24 @@
     state.progress = null;   // leave the finished block in the log
   }
 
+  // "use last asset" only means something once something has been made.
+  function setLastAsset(path) {
+    state.lastAsset = path || null;
+    var box = $('use-last');
+    var wrap = $('use-last-wrap');
+    if (!box) return;
+    box.disabled = !state.lastAsset;
+    if (!state.lastAsset) box.checked = false;
+    if (wrap) {
+      wrap.classList.toggle('enabled', !!state.lastAsset);
+      wrap.title = state.lastAsset
+        ? 'Continue from ' + basename(state.lastAsset)
+        : 'Generate something first';
+    }
+  }
+
+  function basename(p) { return String(p).split(/[\\/]/).pop(); }
+
   function setStatus(msg, isError) {
     var el = $('agent-status');
     el.textContent = msg || '';
@@ -171,6 +189,7 @@
     $('version').textContent = 'v' + d.version;
     state.attached = d.attached || null;
     $('attached').textContent = state.attached ? '(attached)' : '';
+    setLastAsset(d.lastAsset);
     state.authMode = d.authMode;
     $('signout').hidden = !(d.authMode === 'oauth' && d.signedIn);
 
@@ -248,6 +267,14 @@
     call('agent_capture');
   });
 
+  on('agent_input', function (res) {
+    if (!res.ok) return;
+    var d = res.data;
+    $('attached').textContent = '(' + text(d.filename) + ')';
+    if (d.dataUri) showImage('capture-slot', d.dataUri);
+    say('tool', 'input', 'continuing from ' + basename(d.path));
+  });
+
   on('agent_capture', function (res) {
     busy(false);
     if (!res.ok) { setStatus(errText(res.error), true); return say('err', 'capture', errText(res.error)); }
@@ -280,6 +307,7 @@
     call('agent_send', {
       text: t,
       useCapture: $('use-capture').checked,
+      useLastAsset: !!($('use-last') && $('use-last').checked && state.lastAsset),
       confirmCost: !!confirmCost,
       allowCost: !!state.allowCost,
       idempotencyKey: idempotencyKey || ''
@@ -450,11 +478,18 @@
       if (d.dataUri) showImage('result-slot', d.dataUri);
       else showFile('result-slot', d.entry);
       say('agent', 'kaitoi', 'saved ' + d.entry.path);
+      setLastAsset(d.lastAsset || d.entry.path);
       setStatus('done');
     } else {
       say('agent', 'kaitoi', d.text || '(no output)');
       setStatus('');
     }
+  });
+
+  bind('open-folder', 'click', function () { call('agent_open_folder'); });
+  on('agent_open_folder', function (res) {
+    if (!res.ok) return setStatus(errText(res.error), true);
+    setStatus('opened ' + res.data.opened);
   });
 
   bind('reset', 'click', function () {

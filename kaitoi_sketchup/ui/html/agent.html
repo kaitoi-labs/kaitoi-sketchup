@@ -35,6 +35,10 @@
             <input type="checkbox" id="use-capture" checked>
             use capture
           </label>
+          <label class="check" id="use-last-wrap" title="Continue from the last generated image or video">
+            <input type="checkbox" id="use-last" disabled>
+            use last asset
+          </label>
           <button id="capture" class="ghost">Capture view</button>
           <button id="send" class="primary">Send</button>
         </div>
@@ -47,7 +51,10 @@
         <div id="capture-slot" class="slot empty">no capture yet</div>
       </figure>
       <figure>
-        <figcaption>Result</figcaption>
+        <figcaption>
+          Result
+          <button id="open-folder" class="ghost small">Open folder</button>
+        </figcaption>
         <div id="result-slot" class="slot empty">no result yet</div>
       </figure>
     </section>

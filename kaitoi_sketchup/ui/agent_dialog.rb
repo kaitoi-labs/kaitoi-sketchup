@@ -89,7 +89,9 @@ module Kaitoio
               # MCP is its own API: a REST key is never used here.
               'authMode' => token.empty? ? 'oauth' : 'token',
               'signedIn' => !token.empty? || Kaitoio::Mcp::OAuth.signed_in?,
-              'attached' => Kaitoio::Agent::Session.attached,
+              'attached'    => Kaitoio::Agent::Session.attached,
+              'lastAsset'   => Kaitoio::Agent::Session.last_asset,
+              'downloadDir' => Kaitoio::Settings.download_dir,
               'history'  => Kaitoio::History.list.select { |h| h['kind'] == 'agent' } }
           end
         end
@@ -138,6 +140,19 @@ module Kaitoio
             capture = args['useCapture'] != false
             Kaitoio::Agent::Session.allow_cost! if args['allowCost'] == true
 
+            # Continue from the previous result rather than the viewport, so
+            # edits compound instead of restarting from the model each time.
+            if args['useLastAsset'] == true
+              name = Kaitoio::Agent::Session.attach_last_asset
+              push('agent_input', 'ok' => true, 'data' => {
+                'source'   => 'last result',
+                'filename' => name,
+                'path'     => Kaitoio::Agent::Session.last_asset,
+                'dataUri'  => data_uri(Kaitoio::Agent::Session.last_asset, 'image/png')
+              })
+              capture = true
+            end
+
             res = Kaitoio::Agent::Session.chat(
               text, use_capture: capture, confirm_cost: args['confirmCost'] == true
             )
@@ -178,6 +193,14 @@ module Kaitoio
         dialog.add_action_callback('agent_open_file') do |_ctx, json|
           guard('agent_open_file') do
             { 'opened' => Kaitoio::Render.open_file(parse_args(json)['path']) }
+          end
+        end
+
+        dialog.add_action_callback('agent_open_folder') do |_ctx|
+          guard('agent_open_folder') do
+            dir = Kaitoio::Settings.download_dir
+            UI.openURL("file://#{dir}")
+            { 'opened' => dir }
           end
         end
 
@@ -264,7 +287,8 @@ module Kaitoio
 
         # Real media: this is what ends the turn.
         stop_polling
-        out['dataUri'] = preview_uri(out['entry']) if out['entry']
+        out['dataUri']  = preview_uri(out['entry']) if out['entry']
+        out['lastAsset'] = Kaitoio::Agent::Session.last_asset
         push('agent_output', 'ok' => true, 'data' => out)
       end
 

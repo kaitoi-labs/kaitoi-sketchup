@@ -121,3 +121,7 @@ button.small { padding: 3px 9px; font-size: 12px; }
 }
 
 .topbar-right { display: flex; align-items: center; gap: 8px; }
+
+figcaption { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.check input:disabled + span, .check input:disabled { opacity: .5; }
+#use-last-wrap.enabled { color: var(--fg); }
