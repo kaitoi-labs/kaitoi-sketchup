@@ -9,6 +9,8 @@
   var $ = function (id) { return document.getElementById(id); };
   function bind(id, ev, fn) { var e = $(id); if (e) e.addEventListener(ev, fn); }
   function val(id) { var e = $(id); return e ? e.value : ''; }
+  function setVal(id, v) { var e = $(id); if (e) e.value = (v === null || v === undefined) ? '' : String(v); }
+  function setText(id, v) { var e = $(id); if (e) e.textContent = (v === null || v === undefined) ? '' : String(v); }
 
   var handlers = {};
   var state = { busy: false, attached: null, pendingCost: null, allowCost: false,
