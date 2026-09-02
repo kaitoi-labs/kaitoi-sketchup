@@ -220,6 +220,36 @@ Either works — pick one:
 Neither credential is ever sent to the panel's JavaScript — both are redacted
 to a short hint before `boot` returns.
 
+### SketchUp's built-in AI Assistant
+
+The bundled **AI Assistant** extension (`su_assistant`, Trimble) cannot be
+connected to the Kaitoi MCP server. It is closed: its Ruby ships as encrypted
+`.rbe` (`RBS2.0`), the extension is signed (`su_assistant.susig`), its agent
+list is fixed in its own `config.json` (`AUTO_AGENT`, `HELP_AGENT`,
+`RUBY_AGENT`, `TEXT_TO_3D_AGENT`), and its binaries contain no tool- or
+provider-registration surface. There is no supported hook for third-party
+agents or MCP servers.
+
+What does work is the other direction. Its **RUBY_AGENT** writes and runs
+Ruby, so it can drive this plugin through a stable console API:
+
+```ruby
+Kaitoio.help          # list the API
+Kaitoio.capture       # capture the viewport and attach it
+Kaitoio.ask("make this photoreal, golden hour")   # -> downloaded file path
+Kaitoio.confirm("...")# same, confirming a costly run
+Kaitoio.mcp_status    # server info and tool count
+Kaitoio.mcp_tools     # available MCP tool names
+Kaitoio.agent_panel   # open the Agent panel
+```
+
+Ask the AI Assistant to *"run `Kaitoio.ask(\"...\")` in Ruby"* and it will
+call into the MCP bridge for you.
+
+> These console calls **block** until the run finishes — SketchUp is
+> unresponsive meanwhile. That is deliberate: a console script cannot receive
+> a timer callback. Use the Agent panel for long runs; it polls on a timer.
+
 ### How a turn works
 
 1. **Capture** exports the viewport to PNG.

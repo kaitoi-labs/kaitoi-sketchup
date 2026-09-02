@@ -18,6 +18,7 @@ require_relative 'kaitoi_sketchup/extensions/commands'
 require_relative 'kaitoi_sketchup/extensions/menu'
 require_relative 'kaitoi_sketchup/mcp/client'
 require_relative 'kaitoi_sketchup/agent/session'
+require_relative 'kaitoi_sketchup/agent/api'
 require_relative 'kaitoi_sketchup/ui/dialog'
 require_relative 'kaitoi_sketchup/ui/agent_dialog'
 require_relative 'kaitoi_sketchup/ui/credentials_dialog'
@@ -64,7 +65,7 @@ module Kaitoio
     kaitoi_sketchup/api/projects kaitoi_sketchup/api/runs kaitoi_sketchup/api/node_types
     kaitoi_sketchup/api/templates kaitoi_sketchup/model/exporters kaitoi_sketchup/render
     kaitoi_sketchup/graph/builder kaitoi_sketchup/extensions/commands
-    kaitoi_sketchup/mcp/client kaitoi_sketchup/agent/session
+    kaitoi_sketchup/mcp/client kaitoi_sketchup/agent/session kaitoi_sketchup/agent/api
     kaitoi_sketchup/ui/dialog kaitoi_sketchup/ui/agent_dialog
     kaitoi_sketchup/ui/credentials_dialog
   ].freeze
