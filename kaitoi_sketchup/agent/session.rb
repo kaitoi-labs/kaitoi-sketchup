@@ -259,15 +259,31 @@ module Kaitoio
         # server hands back ranked candidates and tells us to pick one by
         # exact type -- do that instead of surfacing a wall of JSON.
         if !resolved && blob.include?('AMBIGUOUS_NODE_MATCH')
-          picked = best_candidate(body)
+          ranked = rank_candidates(body)
+          picked = ranked.first
+
+          if picked && !confident?(picked)
+            # Nothing matched semantically; let the user choose instead of
+            # guessing and billing them for it.
+            @pending_choice = { 'text' => text, 'prompt' => @last_prompt }
+            return { 'kind' => 'choose', 'query' => body['query'] || text,
+                     'candidates' => ranked.first(5).map { |c|
+                       { 'nodeType' => c['nodeType'], 'title' => c['title'],
+                         'category' => c['category'], 'confidence' => c['confidence'],
+                         'score' => c['rankScore'] }
+                     } }
+          end
+
           if picked
-            Kaitoio.log("ambiguous match for #{text.inspect}; choosing #{picked['nodeType']}")
+            Kaitoio.log("ambiguous match for #{text.inspect}; choosing #{picked['nodeType']} " \
+                        "(confidence #{picked['confidence']})")
             out = run_exact(picked['nodeType'], text, key, @last_prompt)
             return out.merge('selectedNode' => {
-              'nodeType' => picked['nodeType'],
-              'title'    => picked['title'],
-              'score'    => picked['rankScore'],
-              'from'     => 'ambiguous'
+              'nodeType'   => picked['nodeType'],
+              'title'      => picked['title'],
+              'score'      => picked['rankScore'],
+              'confidence' => picked['confidence'],
+              'from'       => 'ambiguous'
             })
           end
         end
@@ -377,12 +393,29 @@ module Kaitoio
         interpret(res, text, key, false, true)
       end
 
-      # Highest ranked candidate wins; rankScore is the server's own ordering.
-      def best_candidate(body)
+      # Candidates with rawSemanticScore == nil matched lexically only, and
+      # carry a flat 0.45 confidence. Ranking on rankScore alone let one of
+      # those win -- FLUX 2 Pro Outpaint was picked to "make an illustration".
+      # Prefer semantically matched nodes, then confidence, then rankScore.
+      CONFIDENT = 0.6
+
+      def rank_candidates(body)
         cands = body['candidates']
-        return nil unless cands.is_a?(Array) && !cands.empty?
-        cands.select { |c| c.is_a?(Hash) && c['nodeType'] }
-             .max_by { |c| [c['rankScore'].to_f, c['confidence'].to_f] }
+        return [] unless cands.is_a?(Array)
+        usable = cands.select { |c| c.is_a?(Hash) && c['nodeType'] }
+        semantic = usable.reject { |c| c['rawSemanticScore'].nil? }
+        pool = semantic.empty? ? usable : semantic
+        pool.sort_by { |c| [-c['confidence'].to_f, -c['rankScore'].to_f] }
+      end
+
+      def best_candidate(body)
+        rank_candidates(body).first
+      end
+
+      # Only auto-run when the winner is actually confident; otherwise the
+      # user picks, rather than spending credits on a guess.
+      def confident?(candidate)
+        candidate && candidate['confidence'].to_f >= CONFIDENT
       end
 
       def missing_input_name(body, text)
@@ -396,6 +429,13 @@ module Kaitoio
 
       def image_input_name
         @image_input_name
+      end
+
+      # Run a node the user picked from the ambiguity list.
+      def run_chosen(node_type)
+        choice = @pending_choice || {}
+        @pending_choice = nil
+        run_exact(node_type, choice['text'].to_s, SecureRandom.uuid, choice['prompt'])
       end
 
       def poll(execution_id)

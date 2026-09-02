@@ -307,6 +307,12 @@
       return askCost(d);
     }
 
+    if (d.kind === 'choose') {
+      busy(false);
+      endProgress();
+      return askChoice(d);
+    }
+
     // Conversational reply from the chat node.
     if (d.reply) say('agent', 'kaitoi', d.reply);
 
@@ -314,10 +320,10 @@
       say('tool', 'run', d.generate.query + (d.generate.prompt ? ' — "' + d.generate.prompt + '"' : ''));
       // The search can match several nodes; show which one was actually used.
       var sel = d.run && d.run.selectedNode;
-      if (sel) {
+      if (sel && sel.from !== 'user') {
         say('tool', 'node', text(sel.title || sel.nodeType) +
-          (sel.score ? ' (score ' + Number(sel.score).toFixed(2) + ')' : '') +
-          (sel.from === 'ambiguous' ? ' — chosen from several close matches' : ''));
+          (sel.confidence ? ' · confidence ' + Number(sel.confidence).toFixed(2) : '') +
+          (sel.from === 'ambiguous' ? ' — best of several close matches' : ''));
       }
       updateProgress({ status: 'starting', percent: 0, elapsed: 0,
                        message: d.generate.prompt || d.generate.query });
@@ -350,6 +356,37 @@
 
   function releaseCostButtons() {
     (state.costButtons || []).forEach(function (b) { if (b) b.disabled = false; });
+  }
+
+  // Nothing matched the query semantically, so the user picks rather than
+  // the agent guessing and spending credits on it.
+  function askChoice(d) {
+    say('tool', 'mcp', 'Several nodes matched "' + text(d.query) + '" and none clearly. Pick one:');
+    var box = document.createElement('div');
+    box.className = 'cost';
+    var head = document.createElement('div');
+    head.textContent = 'Choose a node';
+    box.appendChild(head);
+    var row = document.createElement('div');
+    row.className = 'buttons';
+    (d.candidates || []).forEach(function (c) {
+      var b = document.createElement('button');
+      b.className = 'ghost';
+      b.textContent = text(c.title || c.nodeType) +
+        (c.confidence ? ' · ' + Number(c.confidence).toFixed(2) : '');
+      b.title = text(c.nodeType);
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(row.children, function (x) { x.disabled = true; });
+        say('tool', 'node', text(c.title || c.nodeType) + ' — chosen by you');
+        busy(true);
+        setStatus('running ' + text(c.title || c.nodeType) + '…');
+        call('agent_run_node', { nodeType: c.nodeType });
+      });
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+    $('transcript').appendChild(box);
+    $('transcript').scrollTop = $('transcript').scrollHeight;
   }
 
   function askCost(d) {

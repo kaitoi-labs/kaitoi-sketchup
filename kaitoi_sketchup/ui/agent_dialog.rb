@@ -156,6 +156,18 @@ module Kaitoio
           end
         end
 
+        # The user picked a node from the ambiguity list.
+        dialog.add_action_callback('agent_run_node') do |_ctx, json|
+          guard('agent_send') do
+            node = parse_args(json)['nodeType'].to_s
+            raise Kaitoio::Error.new('No node chosen') if node.empty?
+            run = Kaitoio::Agent::Session.run_chosen(node)
+            handle_turn(run, node)
+            { 'kind' => 'reply', 'reply' => nil, 'generate' => { 'query' => node },
+              'run' => run.merge('selectedNode' => { 'nodeType' => node, 'from' => 'user' }) }
+          end
+        end
+
         dialog.add_action_callback('agent_allow_cost') do |_ctx|
           guard('agent_allow_cost') do
             Kaitoio::Agent::Session.allow_cost!
@@ -265,6 +277,41 @@ module Kaitoio
         interval = 2 if interval <= 0
         @timer = UI.start_timer(interval, true) { tick }
         nil
+      end
+
+      # Everything the panel needs to show real progress rather than a
+      # spinner: percent, the newest event line, the node, and elapsed time.
+      def progress_payload(status, body)
+        fresh = []
+        Kaitoio::Agent::Session.events(@exec_id).each do |ev|
+          key = ev['id'] || "#{ev['type']}:#{ev['timestamp'] || ev['createdAt']}:#{ev['message']}"
+          next if @seen_events.key?(key)
+          @seen_events[key] = true
+          fresh << ev
+        end
+
+        latest = fresh.reverse.find { |e| !e['message'].to_s.strip.empty? } || fresh.last
+        pct    = fresh.map { |e| e['progress'] }.compact.map { |v| (v.to_f * 100).round }.max
+        @last_percent = pct if pct && pct > @last_percent.to_i
+
+        fresh.each { |ev| Kaitoio.log(event_line(@exec_id, ev)) }
+
+        { 'status'  => status,
+          'percent' => @last_percent.to_i,
+          'node'    => body['nodeTitle'] || body['nodeType'],
+          'message' => latest && (latest['message'] || latest['type']),
+          'elapsed' => (Time.now - (@run_started || Time.now)).round,
+          'events'  => fresh.length }
+      rescue => e
+        Kaitoio.log("progress unavailable: #{e.message}", 'WARN')
+        { 'status' => status, 'percent' => @last_percent.to_i,
+          'elapsed' => (Time.now - (@run_started || Time.now)).round }
+      end
+
+      def event_line(execution_id, ev)
+        pct = ev['progress'].nil? ? '' : " #{(ev['progress'].to_f * 100).round}%"
+        msg = ev['message'].to_s
+        "[#{execution_id.to_s[0, 8]}] #{ev['type']}#{pct}#{msg.empty? ? '' : ' ' + msg}"
       end
 
       def stop_polling
