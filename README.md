@@ -116,14 +116,25 @@ Plugins > Kaitoio
   ─────
   Credentials...
   Set MCP Token...
-  ─────
-  Reload (dev)
+```
+
+Developer entries (**Reload** and **Run self-test**) are hidden. Enable them
+with:
+
+```ruby
+Kaitoio::Settings.update('dev_mode' => true)   # then restart SketchUp
+```
+
+They are always available from the Ruby Console regardless:
+
+```ruby
+Kaitoio.reload!      # reload plugin Ruby after editing
+Kaitoio.self_test!   # viewport -> image -> video, end to end
 ```
 
 The Panel is the recommended way to work; the menu opens it, opens the Agent,
 and opens the credentials editor (a resizable HtmlDialog — the native
-`UI.inputbox` clipped long tokens and endpoints). **Reload (dev)** re-`load`s the Ruby files
-without restarting SketchUp.
+`UI.inputbox` clipped long tokens and endpoints).
 
 ---
 

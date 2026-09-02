@@ -26,6 +26,9 @@ module Kaitoio
       # MCP. It sees the viewport capture, so it can talk about the model.
       'agent_chat_node'         => 'builtin/third_party/google/gemini_multimodal',
       'agent_history_turns'     => 8,
+      # Developer menu entries (Reload, self-test) are hidden unless this is
+      # set. They remain available from the Ruby Console either way.
+      'dev_mode'                => false,
       # Last panel selections, restored on reopen.
       'last_node_type'          => '',
       'last_prompt'             => '',
