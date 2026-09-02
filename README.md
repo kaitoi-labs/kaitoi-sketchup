@@ -17,27 +17,41 @@ Outputs download to `~/KaitoioDownloads/` and are listed under
 
 ## Install
 
-1. **Copy `kaitoi_sketchup.rb` and the `kaitoi_sketchup/` folder** into your
-   SketchUp `Plugins` directory:
-   - macOS: `~/Library/Application Support/SketchUp <year>/SketchUp/Plugins/`
-   - Windows: `%APPDATA%\SketchUp <year>\SketchUp\Plugins\`
+**Recommended — install the packaged extension.**
 
-   SketchUp only loads `.rb` files sitting **directly** in `Plugins/`, so the
-   loader and its folder are siblings:
+1. Download or build `kaitoi_sketchup-<version>.rbz`:
 
-   ```
-   Plugins/
-     kaitoi_sketchup.rb        <- loader, must be at the Plugins root
-     kaitoi_sketchup/          <- everything else
+   ```bash
+   bash tools/build_rbz.sh
    ```
 
-2. **Restart SketchUp.** A `Plugins > Kaitoio` submenu appears. SketchUp loads
-   Ruby once at startup, so restart after changing plugin files — reopening a
-   panel reloads only the HTML/JS.
+2. In SketchUp: **Window → Extension Manager → Install Extension**, choose the
+   `.rbz`, and confirm.
 
-3. **Add your credentials:** `Plugins > Kaitoio > Credentials...`
+3. Restart SketchUp. **Kaitoi for SketchUp** appears in Extension Manager,
+   where it can be disabled or uninstalled, and a `Plugins > Kaitoio` submenu
+   appears.
 
-4. **Open a panel:** `Kaitoi Nodes` or `Kaitoi Agent...`
+**Alternative — copy the files manually.** Put `kaitoi_sketchup.rb` *and* the
+`kaitoi_sketchup/` folder into your SketchUp `Plugins` directory:
+
+- macOS: `~/Library/Application Support/SketchUp <year>/SketchUp/Plugins/`
+- Windows: `%APPDATA%\SketchUp <year>\SketchUp\Plugins\`
+
+SketchUp only loads `.rb` files sitting **directly** in `Plugins/`, so the
+registration file and its folder are siblings:
+
+```
+Plugins/
+  kaitoi_sketchup.rb        <- registration, must be at the Plugins root
+  kaitoi_sketchup/          <- everything else, loaded via loader.rb
+```
+
+Then restart SketchUp. It loads Ruby once at startup, so restart after
+changing plugin files — reopening a panel reloads only the HTML/JS.
+
+**Then:** add your credentials via `Plugins > Kaitoio > Credentials...` and
+open `Kaitoi Nodes` or `Kaitoi Agent...`.
 
 **Requires SketchUp 2021+** (Ruby 2.7+; SketchUp 2026 ships 3.2.2). Ruby
 stdlib only — no gems.
@@ -216,8 +230,9 @@ Alongside it: `history.json` (Generations), `plugin.log` (all activity),
 ## Under the hood
 
 ```
-kaitoi_sketchup.rb            # entry point, requires everything
+kaitoi_sketchup.rb            # SketchupExtension registration only
 └─ kaitoi_sketchup/
+   ├─ loader.rb               # requires everything, installs the menu
    ├─ settings.rb             # config.json (created 0600)
    ├─ history.rb              # history.json (atomic writes)
    ├─ render.rb               # capture, pin binding, runs, downloads
@@ -273,6 +288,7 @@ The Ruby namespace is `Kaitoio`.
 ```bash
 node test/panel_smoke.js   # runs each panel's JS against a stub DOM
 ruby test/self_calls.rb    # flags self-calls nothing defines
+bash tools/build_rbz.sh    # package as .rbz for Extension Manager
 ```
 
 `ruby -c` only parses. `panel_smoke.js` executes the panel JS, fires the

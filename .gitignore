@@ -46,3 +46,7 @@ $RECYCLE.BIN/
 .project
 .classpath
 .settings/
+
+# Packaged extension
+build/
+*.rbz
