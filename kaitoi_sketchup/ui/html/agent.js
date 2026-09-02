@@ -11,7 +11,8 @@
   function val(id) { var e = $(id); return e ? e.value : ''; }
 
   var handlers = {};
-  var state = { busy: false, attached: null, pendingCost: null, allowCost: false };
+  var state = { busy: false, attached: null, pendingCost: null, allowCost: false,
+                lastSent: null, costButtons: null };
 
   function call(channel, payload) {
     if (!window.sketchup || typeof window.sketchup[channel] !== 'function') {
@@ -205,13 +206,23 @@
   // ---- send -------------------------------------------------------------
 
   function send(confirmCost, idempotencyKey) {
-    var t = val('input').trim();
-    if (!t && !confirmCost) return;
-    if (!confirmCost) { say('user', 'you', t); $('input').value = ''; }
+    var t;
+    if (confirmCost) {
+      // The input was cleared when the message was first sent, so a cost
+      // confirmation has to replay the text we actually sent.
+      t = state.lastSent || '';
+      if (!t) { setStatus('nothing to re-send', true); return; }
+    } else {
+      t = val('input').trim();
+      if (!t) return;
+      state.lastSent = t;
+      say('user', 'you', t);
+      setVal('input', '');
+    }
     busy(true);
     setStatus('thinking…');
     call('agent_send', {
-      text: t || (state.pendingCost && state.pendingCost.text) || '',
+      text: t,
       useCapture: $('use-capture').checked,
       confirmCost: !!confirmCost,
       allowCost: !!state.allowCost,
@@ -226,7 +237,12 @@
   });
 
   on('agent_send', function (res) {
-    if (!res.ok) { busy(false); setStatus(errText(res.error), true); return say('err', 'mcp', errText(res.error)); }
+    if (!res.ok) {
+      busy(false);
+      releaseCostButtons();
+      setStatus(errText(res.error), true);
+      return say('err', 'mcp', errText(res.error));
+    }
     var d = res.data;
 
     if (d.kind === 'cost') {
@@ -252,13 +268,26 @@
   // The raw preview is a nested object; a chat line should not be a JSON dump.
   function summarizeCost(preview) {
     if (!preview || typeof preview !== 'object') return text(preview);
+    // Real shape: { requiresConfirmation, nodeType, providers:[{label,cost,costType}] }
+    var providers = preview.providers;
+    if (Object.prototype.toString.call(providers) === '[object Array]' && providers.length) {
+      var parts = providers.map(function (p) {
+        var cost = (p.cost === undefined || p.cost === null) ? '?' : p.cost;
+        return text(p.label || p.name) + ' ' + cost + (p.costType ? ' ' + p.costType : '');
+      });
+      return parts.join(', ');
+    }
     var c = preview.credits || preview.totalCredits || preview.estimatedCredits;
     if (c !== undefined && c !== null) return c + ' credits';
     try { return JSON.stringify(preview).slice(0, 160); } catch (e) { return 'unknown'; }
   }
 
+  function releaseCostButtons() {
+    (state.costButtons || []).forEach(function (b) { if (b) b.disabled = false; });
+  }
+
   function askCost(d) {
-    state.pendingCost = { text: val('input'), key: d.idempotencyKey };
+    state.pendingCost = { text: state.lastSent, key: d.idempotencyKey };
     var box = document.createElement('div');
     box.className = 'cost';
     var p = document.createElement('div');
@@ -280,6 +309,7 @@
       call('agent_allow_cost');
       send(true, d.idempotencyKey);
     });
+    state.costButtons = [btn, once];
     box.appendChild(p);
     box.appendChild(btn);
     box.appendChild(once);
@@ -316,6 +346,8 @@
     state.attached = null;
     state.pendingCost = null;
     state.allowCost = false;
+    state.lastSent = null;
+    state.costButtons = null;
     $('attached').textContent = '';
     call('agent_reset');
   });
