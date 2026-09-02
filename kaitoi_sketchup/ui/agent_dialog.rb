@@ -249,6 +249,14 @@ module Kaitoio
                       'error' => "The run did not start. #{failure_reason(run)}".strip)
         end
         out = Kaitoio::Agent::Session.collect_output(execution_id, prompt)
+
+        if out['kind'] == 'pending'
+          # Outputs are not ready yet; resume polling rather than ending the
+          # turn with an envelope the user cannot act on.
+          Kaitoio.log('outputs not ready yet; still polling')
+          return start_polling(execution_id, prompt)
+        end
+
         out['dataUri'] = preview_uri(out['entry']) if out['entry']
         push('agent_output', 'ok' => true, 'data' => out)
       end
@@ -281,6 +289,7 @@ module Kaitoio
         @seen_events    = {}
         @last_percent   = 0
         @saw_completion = false
+        @last_logged_message = nil
         interval = (Kaitoio::Settings.load['poll_interval_seconds'] || 2).to_i
         interval = 2 if interval <= 0
         @timer = UI.start_timer(interval, true) { tick }
@@ -318,7 +327,7 @@ module Kaitoio
         pct    = fresh.map { |e| e['progress'] }.compact.map { |v| (v.to_f * 100).round }.max
         @last_percent = pct if pct && pct > @last_percent.to_i
 
-        fresh.each { |ev| Kaitoio.log(event_line(@exec_id, ev)) }
+        fresh.each { |ev| Kaitoio.log(event_line(@exec_id, ev)) if worth_logging?(ev) }
 
         { 'status'  => status,
           'percent' => @last_percent.to_i,
@@ -330,6 +339,23 @@ module Kaitoio
         Kaitoio.log("progress unavailable: #{e.message}", 'WARN')
         { 'status' => status, 'percent' => @last_percent.to_i,
           'elapsed' => (Time.now - (@run_started || Time.now)).round }
+      end
+
+      # The console was drowning in node.progress and repeated IN_PROGRESS.
+      # Percentages belong on the panel's bar, not in the log; only lifecycle
+      # events and genuinely new messages are worth a line.
+      NOISY_TYPES = %w[node.progress].freeze
+
+      def worth_logging?(ev)
+        type = ev['type'].to_s
+        return false if NOISY_TYPES.include?(type)
+
+        msg = ev['message'].to_s.strip
+        return true if msg.empty?                 # lifecycle events keep their line
+        return false if msg == @last_logged_message
+
+        @last_logged_message = msg
+        true
       end
 
       def short_id(id)
@@ -360,7 +386,10 @@ module Kaitoio
         # A run that finishes but whose status string we do not recognise used
         # to poll forever and never deliver, so completion is also inferred
         # from the events and from outputs appearing on the record.
-        finished = TERMINAL.include?(status) || @saw_completion || outputs?(body)
+        # Only the status endpoint decides terminality. Inferring it from a
+        # node.completed event delivered while the execution was still
+        # settling, and get_displayable_outputs answered "still running".
+        finished = TERMINAL.include?(status)
         timed_out = (Time.now - (@run_started || Time.now)) > MAX_RUN_SECONDS
 
         unless finished || timed_out

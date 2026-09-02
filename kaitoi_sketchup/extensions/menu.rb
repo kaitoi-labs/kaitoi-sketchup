@@ -14,6 +14,10 @@ module Kaitoio
         menu.add_item('Credentials...')  { Kaitoio::Dialogs::CredentialsDialog.show('api') }
         menu.add_item('Set MCP Token...') { Kaitoio::Dialogs::CredentialsDialog.show('mcp') }
         menu.add_separator
+        menu.add_item('Run self-test (image -> video)') do
+          Kaitoio::Dialogs::AgentDialog.show
+          Kaitoio::Agent::SelfTest.run!
+        end
         menu.add_item('Reload (dev)') do
           Kaitoio.reload!
           Kaitoio::Dialogs::Dialog.close rescue nil

@@ -463,7 +463,14 @@ module Kaitoio
         body = res['structured'] || {}
         urls = %w[image_urls video_urls audio_urls file_urls].flat_map { |k| Array(body[k]) }
         urls = urls.map { |u| u.is_a?(Hash) ? (u['url'] || u['href']) : u }.compact
-        return { 'kind' => 'text', 'text' => res['text'] } if urls.empty?
+
+        # The node can finish while the execution is still settling, and this
+        # tool then answers {"pending":true,"status":"running"}. That is not a
+        # result -- keep waiting rather than printing the envelope as a reply.
+        if urls.empty? && pending?(body, res['text'])
+          return { 'kind' => 'pending', 'executionId' => execution_id }
+        end
+        return { 'kind' => 'text', 'text' => summarize(res['text']) } if urls.empty?
 
         url  = urls.first
         ext  = File.extname(URI.parse(url).path.to_s)

@@ -103,6 +103,12 @@ module Kaitoio
       Kaitoio::Dialogs::AgentDialog.show
     end
 
+    # Non-blocking end-to-end check: viewport -> image -> video.
+    def self_test!
+      Kaitoio::Dialogs::AgentDialog.show
+      Kaitoio::Agent::SelfTest.run!
+    end
+
     def help
       puts <<~TEXT
         Kaitoio #{Kaitoio::VERSION} — Ruby Console API
@@ -113,6 +119,7 @@ module Kaitoio
           Kaitoio.mcp_status              server info and tool count
           Kaitoio.mcp_tools               available MCP tool names
           Kaitoio.agent_panel             open the Agent panel
+          Kaitoio.self_test!              viewport -> image -> video, end to end
           Kaitoio.reload!                 reload plugin Ruby after editing
 
         These block SketchUp until the run finishes. Use the Agent panel for
