@@ -115,7 +115,6 @@ Plugins > Kaitoio
   Kaitoi Agent...
   ─────
   Credentials...
-  Set MCP Token...
 ```
 
 Developer entries (**Reload** and **Run self-test**) are hidden. Enable them
@@ -232,7 +231,7 @@ Either works — pick one:
 
 1. **Token (recommended).** Mint one in Kaitoi Studio under
    **Settings → MCP**, then paste it into the panel's **Preferences → MCP
-   token**, or use `Plugins > Kaitoio > Set MCP Token...`. Tokens last 365
+   token**. Tokens last 365
    days by default and are revocable; mint a separate one per client.
 2. **OAuth.** Leave the token blank and press **Connect** in the Agent panel.
    The plugin registers itself dynamically, opens your browser for approval,

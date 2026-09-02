@@ -9,14 +9,11 @@ module Kaitoio
     module Commands
       module_function
 
-      # Both open the same editor. UI.inputbox could not show a full token
-      # or endpoint -- its fields are fixed-width and its labels truncate.
+      # Opens the credentials editor, which carries both the REST key and the
+      # MCP token. UI.inputbox could not show a full token or endpoint -- its
+      # fields are fixed-width and its labels truncate.
       def set_api_key
         Kaitoio::Dialogs::CredentialsDialog.show('api')
-      end
-
-      def set_mcp_token
-        Kaitoio::Dialogs::CredentialsDialog.show('mcp')
       end
 
       def test_connection

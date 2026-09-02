@@ -18,7 +18,6 @@ module Kaitoio
         menu.add_item('Kaitoi Agent...') { Kaitoio::Dialogs::AgentDialog.show }
         menu.add_separator
         menu.add_item('Credentials...')  { Kaitoio::Dialogs::CredentialsDialog.show('api') }
-        menu.add_item('Set MCP Token...') { Kaitoio::Dialogs::CredentialsDialog.show('mcp') }
         menu.add_item('Open downloads folder') { Commands.open_downloads }
         # Developer tools are hidden by default. Enable with
         #   Kaitoio::Settings.update('dev_mode' => true)
