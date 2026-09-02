@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaitoio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Kaitoio <span id="version" class="muted"></span></div>
+    <div id="conn" class="pill pill-warn">not configured</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-tab="render" role="tab">Render</button>
+    <button class="tab" data-tab="generations" role="tab">Generations</button>
+    <button class="tab" data-tab="prefs" role="tab">Preferences</button>
+  </nav>
+
+  <main>
+    <!-- ---------------- Render ---------------- -->
+    <section id="tab-render" class="panel is-active">
+      <div class="row">
+        <label for="node-filter">Node type</label>
+        <input id="node-filter" type="search" placeholder="filter, e.g. image">
+      </div>
+      <div class="row">
+        <select id="node-type"></select>
+        <button id="node-more" class="ghost" title="Load more node types">More</button>
+      </div>
+
+      <div class="row">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" rows="3" placeholder="Describe what you want…"></textarea>
+      </div>
+
+      <div class="row actions">
+        <button id="capture">Capture current view</button>
+        <button id="generate" class="primary">Generate</button>
+        <button id="cancel" class="danger" disabled>Cancel</button>
+      </div>
+
+      <div id="render-status" class="status"></div>
+      <div id="render-events" class="events"></div>
+
+      <div class="split">
+        <figure>
+          <figcaption>Capture</figcaption>
+          <div id="capture-slot" class="slot empty">no capture yet</div>
+        </figure>
+        <figure>
+          <figcaption>Result</figcaption>
+          <div id="result-slot" class="slot empty">no result yet</div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Templates tab hidden. Markup kept intact so it can be restored by
+         deleting these comment markers; the Ruby side is untouched. -->
+    <!--
+    <!-- ---------------- Templates ---------------- - ->
+    <section id="tab-templates" class="panel">
+      <div class="row">
+        <input id="tpl-filter" type="search" placeholder="filter templates">
+        <button id="tpl-reload" class="ghost">Reload</button>
+      </div>
+      <div class="row"><select id="tpl-select"></select></div>
+      <div class="row">
+        <label for="tpl-prompt">Prompt</label>
+        <textarea id="tpl-prompt" rows="3"></textarea>
+      </div>
+      <div class="row actions">
+        <button id="tpl-capture">Capture current view</button>
+        <button id="tpl-run" class="primary">Run</button>
+        <button id="tpl-cancel" class="danger" disabled>Cancel</button>
+      </div>
+      <div id="tpl-status" class="status"></div>
+      <div class="split">
+        <figure>
+          <figcaption>Capture</figcaption>
+          <div id="tpl-capture-slot" class="slot empty">no capture yet</div>
+        </figure>
+        <figure>
+          <figcaption>Result</figcaption>
+          <div id="tpl-result-slot" class="slot empty">no result yet</div>
+        </figure>
+      </div>
+    </section>
+
+    -->
+
+    <!-- ---------------- Generations ---------------- -->
+    <section id="tab-generations" class="panel">
+      <div class="row actions">
+        <button id="hist-reload" class="ghost">Reload</button>
+        <button id="hist-clear" class="danger">Clear</button>
+        <span class="muted">files on disk are kept</span>
+      </div>
+      <table class="grid">
+        <thead>
+          <tr><th>When</th><th>Kind</th><th>Node / Template</th><th>Prompt</th><th>File</th></tr>
+        </thead>
+        <tbody id="hist-body"></tbody>
+      </table>
+    </section>
+
+    <!-- ---------------- Preferences ---------------- -->
+    <section id="tab-prefs" class="panel">
+      <div class="row">
+        <label for="api-key">API key <span id="key-hint" class="muted"></span></label>
+        <input id="api-key" type="password" placeholder="leave blank to keep the stored key" autocomplete="off">
+      </div>
+      <div class="grid2">
+        <div class="row"><label for="base-url">Base URL</label><input id="base-url" type="text"></div>
+        <div class="row"><label for="web-url">Web URL</label><input id="web-url" type="text"></div>
+        <div class="row"><label for="api-path">API path</label><input id="api-path" type="text"></div>
+        <div class="row"><label for="timeout">Timeout (s)</label><input id="timeout" type="number" min="1"></div>
+        <div class="row"><label for="retries">Max retries</label><input id="retries" type="number" min="0"></div>
+        <div class="row"><label for="poll">Poll interval (s)</label><input id="poll" type="number" min="1"></div>
+        <div class="row"><label for="max-edge">Capture max edge (px)</label><input id="max-edge" type="number" min="64"></div>
+        <div class="row"><label for="dl-dir">Download directory</label><input id="dl-dir" type="text"></div>
+      </div>
+      <div class="row actions">
+        <button id="save-prefs" class="primary">Save</button>
+        <button id="test-conn" class="ghost">Test connection</button>
+        <button id="credits" class="ghost">Check credits</button>
+        <button id="open-log" class="ghost">Open log</button>
+      </div>
+      <div id="prefs-status" class="status"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

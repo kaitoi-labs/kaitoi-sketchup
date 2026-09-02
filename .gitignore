@@ -1,0 +1,48 @@
+# ---- Secrets / local config ----
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials.json
+
+# ---- Ruby / gem artifacts ----
+*.gem
+.bundle/
+vendor/bundle/
+Gemfile.lock
+.byebug_history
+coverage/
+
+# ---- SketchUp plugin packaging & model files ----
+*.rbz
+*.skp
+*.skb
+
+# ---- Logs / temp ----
+*.log
+log/
+tmp/
+temp/
+*.tmp
+.cache/
+
+# ---- OS junk ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+ehthumbs.db
+ehthumbs_vista.db
+$RECYCLE.BIN/
+
+# ---- Editors / IDEs ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
