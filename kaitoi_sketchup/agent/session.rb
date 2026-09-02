@@ -262,11 +262,7 @@ module Kaitoio
           picked = best_candidate(body)
           if picked
             Kaitoio.log("ambiguous match for #{text.inspect}; choosing #{picked['nodeType']}")
-            args = { 'node_type' => picked['nodeType'], 'wait_seconds' => 25,
-                     'idempotency_key' => SecureRandom.uuid }
-            args['inputs'] = @last_inputs if @last_inputs && !@last_inputs.empty?
-            args['confirm_cost'] = true if cost_allowed?
-            out = interpret(mcp.call_tool('run_node_by_type', args), text, key, false, true)
+            out = run_exact(picked['nodeType'], text, key, @last_prompt)
             return out.merge('selectedNode' => {
               'nodeType' => picked['nodeType'],
               'title'    => picked['title'],
@@ -281,11 +277,7 @@ module Kaitoio
           sel = body['selectedNode']
           type = sel['nodeType'] || sel['type']
           if type
-            args = { 'node_type' => type, 'wait_seconds' => 25,
-                     'idempotency_key' => SecureRandom.uuid }
-            args['inputs'] = @last_inputs if @last_inputs && !@last_inputs.empty?
-            args['confirm_cost'] = true if cost_allowed?
-            out = interpret(mcp.call_tool('run_node_by_type', args), text, key, false, true)
+            out = run_exact(type, text, key, @last_prompt)
             return out.merge('selectedNode' => { 'nodeType' => type, 'title' => sel['title'], 'from' => 'selected' })
           end
         end
@@ -320,6 +312,69 @@ module Kaitoio
 
         { 'kind' => 'result', 'executionId' => execution_id, 'status' => status,
           'text' => res['text'], 'body' => body }
+      end
+
+      # Once the exact node type is known, bind inputs from its real schema
+      # instead of reusing generic names. A scratch graph has no upstream
+      # connections, so every required input must be supplied explicitly --
+      # that is what MISSING_REQUIRED_INPUTS is complaining about.
+      def inputs_for_node(node_type, prompt)
+        pins = Kaitoio::Render.input_pins(Kaitoio::Render.node_types.get(node_type))
+        inputs = {}
+
+        if @attached
+          pin = Kaitoio::Render.capture_pin(pins)
+          inputs[pin['name']] = @attached if pin
+        end
+
+        unless prompt.to_s.strip.empty?
+          pin = Kaitoio::Render.prompt_pin(pins)
+          inputs[pin['name']] = prompt.to_s if pin
+        end
+
+        # Anything else the node demands and we cannot fill, reported by name
+        # rather than as a generic failure.
+        missing = pins.select { |p|
+          p['default'].nil? && !inputs.key?(p['name']) &&
+            Kaitoio::Render::FILE_PIN_TYPES.include?(p['type'])
+        }.map { |p| "#{p['name']}:#{p['type']}" }
+
+        [inputs, missing]
+      rescue Kaitoio::Error => e
+        Kaitoio.log("could not read schema for #{node_type}: #{e.message}", 'WARN')
+        [@last_inputs || {}, []]
+      end
+
+      # Run a known node type with inputs bound from its schema.
+      def run_exact(node_type, text, key, prompt)
+        inputs, missing = inputs_for_node(node_type, prompt)
+        if inputs.empty? && !missing.empty?
+          raise Kaitoio::Error.new(
+            "#{node_type} needs #{missing.join(', ')} and nothing is attached. " \
+            'Capture the viewport first.'
+          )
+        end
+        Kaitoio.log("running #{node_type} with inputs #{inputs.keys.join(', ')}")
+        args = { 'node_type' => node_type, 'inputs' => inputs,
+                 'wait_seconds' => 25, 'idempotency_key' => SecureRandom.uuid }
+        args['confirm_cost'] = true if cost_allowed?
+        res = mcp.call_tool('run_node_by_type', args)
+
+        # Still short of inputs: say which node, what we sent, and what it
+        # wants, instead of repeating the server's generic sentence.
+        if "#{res['text']}".include?('MISSING_REQUIRED_INPUTS')
+          body   = res['structured'] || {}
+          wanted = Array(body['missingInputs'] || body['missing'] || body['requiredInputs'])
+          names  = wanted.map { |m| m.is_a?(Hash) ? (m['name'] || m['input']) : m }.compact
+          detail = names.empty? ? '' : " It needs: #{names.join(', ')}."
+          sent   = inputs.keys.empty? ? 'nothing' : inputs.keys.join(', ')
+          raise Kaitoio::Error.new(
+            "#{node_type} could not run with the inputs available (sent: #{sent}).#{detail}",
+            code: 'MISSING_REQUIRED_INPUTS'
+          )
+        end
+
+        interpret(res, text, key, false, true)
       end
 
       # Highest ranked candidate wins; rankScore is the server's own ordering.
