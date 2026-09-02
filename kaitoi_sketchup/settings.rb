@@ -22,6 +22,10 @@ module Kaitoio
       # in mcp_token. Leave it blank to sign in with OAuth instead.
       'mcp_url'                 => 'https://mcp.studio.kaitoi.io',
       'mcp_token'             => '',
+      # Conversation brain for the Agent panel: a vision chat node run over
+      # MCP. It sees the viewport capture, so it can talk about the model.
+      'agent_chat_node'         => 'builtin/third_party/google/gemini_multimodal',
+      'agent_history_turns'     => 8,
       # Last panel selections, restored on reopen.
       'last_node_type'          => '',
       'last_prompt'             => '',

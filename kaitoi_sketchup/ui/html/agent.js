@@ -11,7 +11,7 @@
   function val(id) { var e = $(id); return e ? e.value : ''; }
 
   var handlers = {};
-  var state = { busy: false, attached: null, pendingCost: null };
+  var state = { busy: false, attached: null, pendingCost: null, allowCost: false };
 
   function call(channel, payload) {
     if (!window.sketchup || typeof window.sketchup[channel] !== 'function') {
@@ -214,6 +214,7 @@
       text: t || (state.pendingCost && state.pendingCost.text) || '',
       useCapture: $('use-capture').checked,
       confirmCost: !!confirmCost,
+      allowCost: !!state.allowCost,
       idempotencyKey: idempotencyKey || ''
     });
   }
@@ -227,35 +228,61 @@
   on('agent_send', function (res) {
     if (!res.ok) { busy(false); setStatus(errText(res.error), true); return say('err', 'mcp', errText(res.error)); }
     var d = res.data;
-    if (d.text) say('tool', 'mcp', d.text.length > 600 ? d.text.slice(0, 600) + '…' : d.text);
 
     if (d.kind === 'cost') {
       busy(false);
       return askCost(d);
     }
-    if (d.kind === 'pending') {
-      setStatus('running (' + text(d.status || 'queued') + ')…');
-      return;
+
+    // Conversational reply from the chat node.
+    if (d.reply) say('agent', 'kaitoi', d.reply);
+
+    if (d.generate) {
+      say('tool', 'run', d.generate.query + (d.generate.prompt ? ' — "' + d.generate.prompt + '"' : ''));
+      setStatus('generating…');
+      return;                       // agent_status / agent_output follow
     }
+
+    busy(false);
     setStatus('');
   });
 
   // Costly nodes must be confirmed explicitly, with the same idempotency key
   // so a retry cannot launch a second paid run.
+  // The raw preview is a nested object; a chat line should not be a JSON dump.
+  function summarizeCost(preview) {
+    if (!preview || typeof preview !== 'object') return text(preview);
+    var c = preview.credits || preview.totalCredits || preview.estimatedCredits;
+    if (c !== undefined && c !== null) return c + ' credits';
+    try { return JSON.stringify(preview).slice(0, 160); } catch (e) { return 'unknown'; }
+  }
+
   function askCost(d) {
     state.pendingCost = { text: val('input'), key: d.idempotencyKey };
     var box = document.createElement('div');
     box.className = 'cost';
     var p = document.createElement('div');
-    p.textContent = 'This run costs credits: ' + text(JSON.stringify(d.preview));
+    p.textContent = 'This costs credits: ' + summarizeCost(d.preview);
     var btn = document.createElement('button');
     btn.textContent = 'Confirm and run';
     btn.addEventListener('click', function () {
       btn.disabled = true;
+      once.disabled = true;
+      send(true, d.idempotencyKey);
+    });
+    var once = document.createElement('button');
+    once.textContent = 'Allow for this session';
+    once.className = 'ghost';
+    once.addEventListener('click', function () {
+      once.disabled = true;
+      btn.disabled = true;
+      state.allowCost = true;
+      call('agent_allow_cost');
       send(true, d.idempotencyKey);
     });
     box.appendChild(p);
     box.appendChild(btn);
+    box.appendChild(once);
     $('transcript').appendChild(box);
     $('transcript').scrollTop = $('transcript').scrollHeight;
   }
@@ -288,6 +315,7 @@
     $('result-slot').textContent = 'no result yet';
     state.attached = null;
     state.pendingCost = null;
+    state.allowCost = false;
     $('attached').textContent = '';
     call('agent_reset');
   });

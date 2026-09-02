@@ -117,17 +117,37 @@ module Kaitoio
           end
         end
 
+        # A turn is a conversation first: the chat node answers, and only
+        # asks for a generation when the user actually wants one.
         dialog.add_action_callback('agent_send') do |_ctx, json|
           guard('agent_send') do
-            args = parse_args(json)
-            res  = Kaitoio::Agent::Session.ask(
-              args['text'],
-              use_capture:  args['useCapture'] != false,
-              confirm_cost: args['confirmCost'] == true,
-              idempotency_key: nilify(args['idempotencyKey'])
+            args    = parse_args(json)
+            text    = args['text']
+            capture = args['useCapture'] != false
+            Kaitoio::Agent::Session.allow_cost! if args['allowCost'] == true
+
+            res = Kaitoio::Agent::Session.chat(
+              text, use_capture: capture, confirm_cost: args['confirmCost'] == true
             )
-            handle_turn(res, args['text'])
-            res
+            next res if res['kind'] == 'cost'
+
+            gen = res['generate']
+            if gen
+              run = Kaitoio::Agent::Session.ask(
+                gen['query'], prompt: gen['prompt'], use_capture: capture
+              )
+              handle_turn(run, gen['prompt'] || text)
+              res.merge('run' => run)
+            else
+              res
+            end
+          end
+        end
+
+        dialog.add_action_callback('agent_allow_cost') do |_ctx|
+          guard('agent_allow_cost') do
+            Kaitoio::Agent::Session.allow_cost!
+            { 'allowed' => true }
           end
         end
 

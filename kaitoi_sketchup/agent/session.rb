@@ -30,6 +30,139 @@ module Kaitoio
         @attached = nil
         @tool_names = nil
         @image_input_name = nil
+        @history = []
+        @allow_cost = false
+      end
+
+      def history
+        @history ||= []
+      end
+
+      def allow_cost!
+        @allow_cost = true
+      end
+
+      def cost_allowed?
+        @allow_cost == true
+      end
+
+      # ---- conversation ----------------------------------------------
+
+      # The chat node is asked for one JSON object so a plain greeting stays a
+      # greeting. Previously every message was fed straight to
+      # run_node_by_search, so "hi" came back as AMBIGUOUS_NODE_MATCH.
+      SYSTEM = <<~PROMPT.freeze
+        You are the Kaitoi assistant, embedded in SketchUp. The user is modelling;
+        when an image is attached it is a capture of their current viewport.
+
+        Kaitoi can generate and transform media (images, video, 3D) through its
+        node library. You may ask Kaitoi to run a node when the user actually
+        wants something created or transformed.
+
+        Reply with ONE JSON object and nothing else, no code fences:
+        {"reply": "<what you say to the user>", "generate": null}
+        or
+        {"reply": "<what you are about to do>",
+         "generate": {"query": "<node capability, e.g. image to image edit>",
+                      "prompt": "<prompt for that node>"}}
+
+        Set "generate" only when the user asks to create or change media.
+        For greetings, questions, or discussion about the model, use null.
+        Keep "reply" short and conversational.
+      PROMPT
+
+      def chat_node
+        Kaitoio::Settings.load['agent_chat_node'].to_s
+      end
+
+      # One conversational turn. Returns:
+      #   { 'kind' => 'reply',   'reply' =>, 'generate' => nil|Hash }
+      #   { 'kind' => 'cost',    'preview' =>, 'stage' => 'chat' }
+      def chat(text, use_capture: true, confirm_cost: false)
+        raise Kaitoio::Error.new('Say something first') if text.to_s.strip.empty?
+        mcp.ensure_initialized!
+
+        inputs = { 'prompt' => build_prompt(text) }
+        inputs['inputImage'] = @attached if use_capture && @attached
+
+        args = { 'node_type' => chat_node, 'inputs' => inputs,
+                 'wait_seconds' => 45, 'idempotency_key' => SecureRandom.uuid }
+        args['confirm_cost'] = true if confirm_cost || cost_allowed?
+
+        res  = mcp.call_tool('run_node_by_type', args)
+        body = res['structured'] || {}
+        blob = "#{res['text']}"
+
+        if blob.include?('COST_CONFIRMATION_REQUIRED')
+          return { 'kind' => 'cost', 'stage' => 'chat', 'text' => text,
+                   'preview' => body['costPreview'] || body }
+        end
+
+        answer = extract_text(body, res['text'])
+        parsed = parse_reply(answer)
+
+        history << { 'role' => 'user', 'text' => text.to_s }
+        history << { 'role' => 'assistant', 'text' => parsed['reply'].to_s }
+        trim_history
+
+        { 'kind' => 'reply', 'reply' => parsed['reply'], 'generate' => parsed['generate'] }
+      end
+
+      def build_prompt(text)
+        parts = [SYSTEM]
+        unless history.empty?
+          parts << '---'
+          history.each do |h|
+            parts << "#{h['role'] == 'user' ? 'User' : 'Assistant'}: #{h['text']}"
+          end
+        end
+        parts << "User: #{text}"
+        parts << 'Assistant:'
+        parts.join("\n")
+      end
+
+      def trim_history
+        keep = (Kaitoio::Settings.load['agent_history_turns'] || 8).to_i * 2
+        @history = history.last(keep) if history.length > keep
+      end
+
+      # The output pin differs per node: gemini_multimodal -> analysis,
+      # chatgpt -> reply, openrouter_chat -> response.
+      def extract_text(body, fallback)
+        outs = body['outputs']
+        if outs.is_a?(Hash)
+          %w[analysis reply response chat text].each do |k|
+            v = outs[k]
+            return v if v.is_a?(String) && !v.strip.empty?
+          end
+          str = outs.values.find { |v| v.is_a?(String) && !v.strip.empty? }
+          return str if str
+        end
+        %w[text analysis reply].each do |k|
+          return body[k] if body[k].is_a?(String) && !body[k].strip.empty?
+        end
+        fallback.to_s
+      end
+
+      # Models wrap JSON in prose or fences often enough that a strict parse
+      # would drop good answers; fall back to treating it all as the reply.
+      def parse_reply(answer)
+        raw = answer.to_s.strip
+        raw = raw.sub(/\A```(?:json)?/, '').sub(/```\z/, '').strip
+        candidate = raw[/\{.*\}/m]
+        if candidate
+          begin
+            obj = JSON.parse(candidate)
+            if obj.is_a?(Hash) && obj.key?('reply')
+              gen = obj['generate']
+              gen = nil unless gen.is_a?(Hash) && !gen['query'].to_s.strip.empty?
+              return { 'reply' => obj['reply'].to_s, 'generate' => gen }
+            end
+          rescue JSON::ParserError
+            nil
+          end
+        end
+        { 'reply' => raw.empty? ? '(no reply)' : raw, 'generate' => nil }
       end
 
       def attached
@@ -91,15 +224,20 @@ module Kaitoio
 
       # Returns a Hash the panel renders:
       #   { kind: 'result' | 'cost' | 'pending' | 'error', ... }
-      def ask(text, use_capture: true, confirm_cost: false, idempotency_key: nil)
+      def ask(text, prompt: nil, use_capture: true, confirm_cost: false, idempotency_key: nil)
         raise Kaitoio::Error.new('Say something first') if text.to_s.strip.empty?
         mcp.ensure_initialized!
         ensure_run_tool!
 
         key  = idempotency_key || SecureRandom.uuid
         args = { 'query' => text.to_s, 'wait_seconds' => 25, 'idempotency_key' => key }
-        args['confirm_cost'] = true if confirm_cost
-        args['inputs'] = { image_input_name => @attached } if use_capture && @attached && image_input_name
+        args['confirm_cost'] = true if confirm_cost || cost_allowed?
+
+        inputs = {}
+        inputs['prompt'] = prompt.to_s if prompt && !prompt.to_s.strip.empty?
+        inputs[image_input_name] = @attached if use_capture && @attached && image_input_name
+        args['inputs'] = inputs unless inputs.empty?
+        @last_prompt = prompt
 
         res = mcp.call_tool(RUN_TOOL, args)
         interpret(res, text, key, use_capture)
@@ -121,9 +259,12 @@ module Kaitoio
           if name && name != image_input_name
             @image_input_name = name
             Kaitoio.log("agent retrying with capture bound to '#{name}'")
+            retry_inputs = { name => @attached }
+            retry_inputs['prompt'] = @last_prompt.to_s if @last_prompt && !@last_prompt.to_s.strip.empty?
             retry_args = { 'query' => text.to_s, 'wait_seconds' => 25,
                            'idempotency_key' => SecureRandom.uuid,
-                           'inputs' => { name => @attached } }
+                           'confirm_cost' => cost_allowed?,
+                           'inputs' => retry_inputs }
             return interpret(mcp.call_tool(RUN_TOOL, retry_args), text, key, false)
           end
         end

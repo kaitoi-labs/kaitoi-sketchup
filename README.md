@@ -187,8 +187,19 @@ becomes a call to the [Kaitoi Studio MCP server](https://github.com/kaitoi-labs/
 which picks the node and runs it — the transcript shows the tool traffic, so
 what ran stays visible.
 
-> This is not an LLM agent. One message is one MCP tool call
-> (`run_node_by_search`); the server does the node selection.
+The panel is a real conversation. Each message goes to a **vision chat node**
+run over MCP (`agent_chat_node`, default
+`builtin/third_party/google/gemini_multimodal`), which sees the viewport
+capture and answers in natural language. It triggers a generation only when
+you actually ask for one — a greeting stays a greeting.
+
+Earlier builds sent every message straight to `run_node_by_search`, so "hi"
+came back as `AMBIGUOUS_NODE_MATCH`. The chat node now sits in front and
+decides whether a run is wanted.
+
+Chat turns cost credits. The first one asks for confirmation and offers
+**Allow for this session** so a conversation is not a confirmation dialog per
+message.
 
 ### Configuration
 
