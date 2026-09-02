@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaitoi Agent</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="agent.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Kaitoi Agent <span id="version" class="muted"></span></div>
+    <div id="conn" class="pill pill-warn">not connected</div>
+  </header>
+
+  <main class="agent-grid">
+    <section class="chat-col">
+      <div class="col-head">
+        <span>Chat</span>
+        <button id="reset" class="ghost small">New session</button>
+      </div>
+
+      <div id="transcript" class="transcript" role="log" aria-live="polite"></div>
+
+      <div id="agent-status" class="status"></div>
+
+      <div class="composer">
+        <textarea id="input" rows="2" placeholder="Ask Kaitoi to make something from the current view…"></textarea>
+        <div class="composer-actions">
+          <label class="check">
+            <input type="checkbox" id="use-capture" checked>
+            use capture
+          </label>
+          <button id="capture" class="ghost">Capture view</button>
+          <button id="send" class="primary">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="media-col">
+      <figure>
+        <figcaption>Capture <span id="attached" class="muted"></span></figcaption>
+        <div id="capture-slot" class="slot empty">no capture yet</div>
+      </figure>
+      <figure>
+        <figcaption>Result</figcaption>
+        <div id="result-slot" class="slot empty">no result yet</div>
+      </figure>
+    </section>
+  </main>
+
+  <script src="agent.js"></script>
+</body>
+</html>

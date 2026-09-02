@@ -13,6 +13,11 @@ module Kaitoio
       'poll_interval_seconds'   => 2,
       'download_dir'            => '',
       'capture_max_edge'        => 1024,
+      # MCP (Kaitoi Agent). The MCP endpoint needs a key carrying the
+      # mcp:read / mcp:write scopes; a plain REST key is rejected with
+      # INSUFFICIENT_SCOPE. Left blank, the REST key is tried anyway.
+      'mcp_url'                 => 'https://mcp.studio.kaitoi.io/llm/mcp',
+      'mcp_api_key'             => '',
       # Last panel selections, restored on reopen.
       'last_node_type'          => '',
       'last_prompt'             => '',

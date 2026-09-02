@@ -128,7 +128,10 @@
     $('retries').value  = text(s.max_retries);
     $('poll').value     = text(s.poll_interval_seconds);
     $('max-edge').value = text(s.capture_max_edge);
-    $('dl-dir').value   = text(s.download_dir || downloadDir);
+    setVal('dl-dir', text(s.download_dir || downloadDir));
+    setVal('mcp-url', text(s.mcp_url));
+    var mh = $('mcp-key-hint');
+    if (mh) mh.textContent = s.mcp_api_key_set ? '(' + s.mcp_api_key_hint + ' stored)' : '(not set — falls back to the API key)';
   }
 
   // ---- node types -------------------------------------------------------
@@ -478,13 +481,16 @@
       max_retries: Number($('retries').value) || 0,
       poll_interval_seconds: Number($('poll').value) || 2,
       capture_max_edge: Number($('max-edge').value) || 1024,
-      download_dir: $('dl-dir').value
+      download_dir: val('dl-dir'),
+      mcp_url: val('mcp-url'),
+      mcp_api_key: val('mcp-key')          // blank = keep stored key
     });
   });
 
   on('save_settings', function (res) {
     if (!res.ok) return setStatus('prefs-status', errText(res.error), true);
-    $('api-key').value = '';
+    setVal('api-key', '');
+    setVal('mcp-key', '');
     fillPrefs(res.data);
     setStatus('prefs-status', 'saved');
     loadNodeTypes(true);

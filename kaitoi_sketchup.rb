@@ -16,7 +16,10 @@ require_relative 'kaitoi_sketchup/render'
 require_relative 'kaitoi_sketchup/graph/builder'
 require_relative 'kaitoi_sketchup/extensions/commands'
 require_relative 'kaitoi_sketchup/extensions/menu'
+require_relative 'kaitoi_sketchup/mcp/client'
+require_relative 'kaitoi_sketchup/agent/session'
 require_relative 'kaitoi_sketchup/ui/dialog'
+require_relative 'kaitoi_sketchup/ui/agent_dialog'
 
 module Kaitoio
   def self.install
@@ -59,7 +62,9 @@ module Kaitoio
     kaitoi_sketchup/api/errors kaitoi_sketchup/api/client kaitoi_sketchup/api/files
     kaitoi_sketchup/api/projects kaitoi_sketchup/api/runs kaitoi_sketchup/api/node_types
     kaitoi_sketchup/api/templates kaitoi_sketchup/model/exporters kaitoi_sketchup/render
-    kaitoi_sketchup/graph/builder kaitoi_sketchup/extensions/commands kaitoi_sketchup/ui/dialog
+    kaitoi_sketchup/graph/builder kaitoi_sketchup/extensions/commands
+    kaitoi_sketchup/mcp/client kaitoi_sketchup/agent/session
+    kaitoi_sketchup/ui/dialog kaitoi_sketchup/ui/agent_dialog
   ].freeze
 
   def self.reload!

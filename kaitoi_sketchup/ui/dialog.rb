@@ -97,7 +97,8 @@ module Kaitoio
           guard('save_settings') do
             incoming = JSON.parse(json.to_s)
             # A blank api_key means "leave the stored one alone".
-            incoming.delete('api_key') if incoming['api_key'].to_s.strip.empty?
+            incoming.delete('api_key')     if incoming['api_key'].to_s.strip.empty?
+            incoming.delete('mcp_api_key') if incoming['mcp_api_key'].to_s.strip.empty?
             redact(Kaitoio::Settings.update(incoming))
           end
         end
@@ -364,6 +365,11 @@ module Kaitoio
         out['api_key'] = ''
         out['api_key_set'] = !key.empty?
         out['api_key_hint'] = key.empty? ? '' : "#{key[0, 6]}…#{key[-4, 4]}"
+
+        mcp = out['mcp_api_key'].to_s
+        out['mcp_api_key']      = ''
+        out['mcp_api_key_set']  = !mcp.empty?
+        out['mcp_api_key_hint'] = mcp.empty? ? '' : "#{mcp[0, 6]}…#{mcp[-4, 4]}"
         out
       end
 
